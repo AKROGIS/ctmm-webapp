@@ -4,4 +4,4 @@ if (!require("devtools"))
 devtools::install_github("rstudio/shiny")
 devtools::install_github("ctmm-initiative/ctmm")
 # run app
-shiny::runGitHub('ctmm-initiative/ctmm-webapp')
+shiny::runGitHub('regan-sarwas/ctmm-webapp')
