@@ -64,14 +64,13 @@ server <- function(input, output, session) {
   # observe radio button changes
   observeEvent(input$load_option, {
     switch(input$load_option,
-           ctmm = {
-             data("buffalo")
-             update_input_data(buffalo)
+           lacl_sheep = {
+             data("LACL_Sheep")
+             update_input_data(LACL_Sheep)
            },
-           ctmm_sample = {
-             data("buffalo")
-             sample_data <- pick_m_tele_list(buffalo, input$sample_size)
-             update_input_data(sample_data)
+           dena_coyote = {
+             data("DENA_Coyote")
+             update_input_data(DENA_Coyote)
            },
            upload = {
              # need to check NULL input from source, stop error in downstream
