@@ -475,9 +475,7 @@ body <- dashboardBody(
   # match menuItem
   tabItems(
     # tabItem(tabName = "intro", fluidPage(includeMarkdown("help/workflow1.md"))),
-    tabItem(tabName = "import", fluidRow(upload_box, movebank_login_box),
-            fluidRow(movebank_studies_box, movebank_study_detail_box,
-                     movebank_study_preview_box)),
+    tabItem(tabName = "import", fluidRow(upload_box, movebank_login_box)),
     tabItem(tabName = "plots",
             fluidRow(data_summary_box,
                      location_plot_box,
