@@ -41,7 +41,7 @@ upload_box <- box(title = "Local Data Import",
                                     "Lake Clark Wolves" = 'lacl_wolves',
                                     "Lake Clark Sheep" = 'lacl_sheep',
                                     "Western Arctic Caribou Herd" = 'wach_caribou',
-                                    "Wrangall-St Elias Caribou" = 'wrst_caribou',
+                                    "Wrangell-St Elias Caribou" = 'wrst_caribou',
                                     "Upload Movebank format file" = 'upload'),
                                   selected = "upload"),
       tags$style("input[type='radio']+span{font-weight: 600;font-size: small;}")
@@ -485,7 +485,7 @@ body <- dashboardBody(
   # match menuItem
   tabItems(
     # tabItem(tabName = "intro", fluidPage(includeMarkdown("help/workflow1.md"))),
-    tabItem(tabName = "import", fluidRow(upload_box, movebank_login_box)),
+    tabItem(tabName = "import", fluidRow(upload_box)),
     tabItem(tabName = "plots",
             fluidRow(data_summary_box,
                      location_plot_box,
