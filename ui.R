@@ -365,11 +365,11 @@ vario_control_box <- box(title = "Plot Controls",
                                            inline = FALSE)),
         column(2, offset = 0, numericInput("vario_height",
                                            "Figure height",
-                                           value = 250, min = 50, max = 800,
+                                           value = 500, min = 50, max = 800,
                                            step = 50)),
         column(2, offset = 0, numericInput("vario_columns",
                                            "Columns",
-                                           value = 2, min = 1, max = 6,
+                                           value = 1, min = 1, max = 6,
                                            step = 1))
       )
       # )
