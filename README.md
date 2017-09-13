@@ -34,3 +34,12 @@ You can run app in your local machine with these steps:
     Running in RStudio will use RStudio's embeded browser by default. In windows/Linux this has known compatibility problems(slider label not in log scale, download file name not formated automatically, download dialog lost response). You can click the `open in browser` button in the browser top bar to use system browser instead. Chrome is recommended.
 
   More details about installation, running specific version of app, or running app without Internet can be [found here.](README-install.md)
+
+3. Run the local developer version for testing/demonstrations, without internet downloads, etc.
+
+  ```
+  $ cd $repo_dir
+  $ R
+  > shiny:::runApp(appDir=getwd(), port=7893, host="0.0.0.0")
+  ctrl-c # to quit
+  ```
