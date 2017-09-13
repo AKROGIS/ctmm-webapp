@@ -16,18 +16,18 @@ devtools::install_github("ctmm-initiative/ctmm")
 
 ```r
 # stable version
-shiny::runGitHub('ctmm-initiative/ctmm-webapp', ref = "v0.0.6")
+shiny::runGitHub('regan-sarwas/ctmm-webapp', ref = "v0.0.6")
 # or latest version
-shiny::runGitHub('ctmm-initiative/ctmm-webapp')
+shiny::runGitHub('regan-sarwas/ctmm-webapp')
 ```
 
 ## Run app in local machine without Internet
 
-The method above always download the app before run. You can also download the app and run without Internet. 
+The method above always download the app before run. You can also download the app and run without Internet.
 
 With R and dependency packages installed:
 
-1. Download the stable version from [releases page](https://github.com/ctmm-initiative/ctmm-webapp/releases), currently `v0.0.6`, or the [latest development version](https://github.com/ctmm-initiative/ctmm-webapp/archive/master.zip).
+1. Download the stable version from [releases page](https://github.com/regan-sarwas/ctmm-webapp/releases), currently `v0.0.6`, or the [latest development version](https://github.com/regan-sarwas/ctmm-webapp/archive/master.zip).
 
 2. Unzip the zip to a folder, then run it with
 
@@ -40,11 +40,10 @@ With R and dependency packages installed:
 - RStudio have installer for Linux.
 - Some of the packages needed for the app need extra steps to install properly:
   + `devtools` need `libcurl`, `ssl` if it's not already installed in your system. You can watch error messages to check what is required. I installed them in Linux Mint 18 with
-  
+
         sudo apt-get install libcurl4-openssl-dev
         sudo apt-get install libssl-dev
-  
+
   + `ctmm` need `rgdal`, which need another two libraries in linux:
-  
+
         sudo apt-get update && sudo apt-get install libgdal-dev libproj-dev
-  
