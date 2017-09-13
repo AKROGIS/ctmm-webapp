@@ -65,12 +65,52 @@ server <- function(input, output, session) {
   observeEvent(input$load_option, {
     switch(input$load_option,
            lacl_sheep = {
-             data("LACL_Sheep")
-             update_input_data(LACL_Sheep)
+             data("ARCNVSID022")
+             update_input_data(ARCNVSID022)
+           },
+           dena_bears = {
+             data("DENA_Bears")
+             update_input_data(DENA_Bears)
            },
            dena_coyote = {
              data("DENA_Coyote")
              update_input_data(DENA_Coyote)
+           },
+           dena_wolves = {
+             data("DENA_Wolves")
+             update_input_data(DENA_Wolves)
+           },
+           gaar_bears = {
+             data("GAAR_Bears")
+             update_input_data(GAAR_Bears)
+           },
+           gaar_moose = {
+             data("GAAR_Moose")
+             update_input_data(GAAR_Moose)
+           },
+           katm_bears = {
+             data("KATM_BrownBear")
+             update_input_data(KATM_BrownBear)
+           },
+           lacl_bears = {
+             data("LACL_BrownBear")
+             update_input_data(LACL_BrownBear)
+           },
+           lacl_sheep = {
+             data("LACL_Sheep")
+             update_input_data(LACL_Sheep)
+           },
+           lacl_wolves = {
+             data("LACL_Wolf")
+             update_input_data(LACL_Wolf)
+           },
+           wach_caribou = {
+             data("WACH")
+             update_input_data(WACH)
+           },
+           wrst_caribou = {
+             data("WRST_Caribou")
+             update_input_data(WRST_Caribou)
            },
            upload = {
              # need to check NULL input from source, stop error in downstream
