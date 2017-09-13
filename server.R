@@ -64,7 +64,7 @@ server <- function(input, output, session) {
   # observe radio button changes
   observeEvent(input$load_option, {
     switch(input$load_option,
-           lacl_sheep = {
+           arcn_muskox = {
              data("ARCNVSID022")
              update_input_data(ARCNVSID022)
            },
