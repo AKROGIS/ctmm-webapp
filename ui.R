@@ -468,7 +468,12 @@ occurrence_plot_box <- box(title = "Occurrence Distribution", status = "info",
                                textInput("oc_level_text",
                     "% Contour level of the Occurrence Distribution",
                                          value = 95)),
-                        column(2, offset = 3, br(), help_button("occurrence")),
+                        column(2, offset = 1, br(),
+                               downloadButton("export_occurrence",
+                                              "Export Shapefiles",
+                                              icon = icon("save"),
+                                              style = styles$page_action)),
+                        column(2, br(), help_button("occurrence")),
                         column(12, plotOutput("occurrence_plot",
                                 width = "99%", height = "98%"))))
 # body ----

@@ -1605,4 +1605,27 @@ server <- function(input, output, session) {
     })
     par(def.par)
   }, height = function() { select_models_layout()$height })
+  output$export_occurrence <- downloadHandler(
+    filename = function() {
+      # up to min so it should be consistent with the folder name inside zip
+      current_time <- format(Sys.time(), "%Y-%m-%d_%H-%M_UTC",
+                             tz = "UTC")
+      paste0("Occurrence ", current_time, ".zip")
+    },
+    content = function(file) {
+      save_shapefiles <- function(occurrence_list, ud_levels) {
+        write_f <- function(folder_path) {
+          # unlist/flatten cannot preserve the real item name. have to write each item explicitly.
+          lapply(occurrence_list, function(x) {
+            writeShapefile(x, folder_path, level.UD = ud_levels)
+          })
+        }
+        return(write_f)
+      }
+      occurrence_list <- select_occurrences()
+      ud_levels <- get_oc_levels()
+      build_zip(file, save_shapefiles(occurrence_list, ud_levels))
+    }
+  )
+
 }
