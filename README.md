@@ -23,7 +23,7 @@ It's a shiny app built upon [ctmm R package](https://github.com/ctmm-initiative/
 
     ```r
     if (!require("devtools")) install.packages("devtools")
-    devtools::install_github("ctmm-initiative/ctmmweb")
+    devtools::install_github("regan-sarwas/ctmmweb")
     ```
 
 3. Run the app in one of following methods:
