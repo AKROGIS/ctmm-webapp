@@ -1,0 +1,44 @@
+Package: ctmmweb
+Type: Package
+Title: Web App For ctmm
+Version: 0.1.0
+Authors@R: person("Xianghui", "Dong", email = "xhdong@umd.edu",
+                  role = c("aut", "cre"))
+Maintainer: Xianghui Dong <xhdong@umd.edu>
+Description: Shiny app for ctmm. Various utility functions can also be used 
+    individually.
+License: GPL-3 + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.0.1
+Roxygen: list(markdown = TRUE)
+Imports: shiny,
+    crayon,
+    rmarkdown,
+    knitr,
+    data.table,
+    ctmm,
+    parallel,
+    memoise,
+    ggplot2,
+    scales,
+    grid,
+    gridExtra,
+    lubridate,
+    leaflet,
+    sp,
+    rgdal,
+    leaflet.extras,
+    htmlwidgets,
+    rgeos,
+    httr,
+    stringr,
+    XML,
+    xml2,
+    zip
+Remotes: rstudio/shiny,
+    rstudio/leaflet,
+    ctmm-initiative/ctmm
+Suggests: knitr,
+    rmarkdown
+VignetteBuilder: knitr
