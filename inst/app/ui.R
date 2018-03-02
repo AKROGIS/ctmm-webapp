@@ -85,92 +85,27 @@ app_options_box <- box(title = "App Options",
                                       ))
 upload_box <- box(title = "Local Data Import",
                   # height = ctmmweb:::STYLES$height_data_import_box,
-                  status = "info", solidHeader = TRUE, width = 6,
-  fluidRow(column(8, radioButtons('load_option', NULL,
-                                  c("Use Bufflo Data in ctmm" = 'ctmm',
-                                    "Use Sample of Buffalo Data" = 'ctmm_sample',
+                  status = "info", solidHeader = TRUE, width = 12,
+  fluidRow(column(12, radioButtons('load_option', NULL,
+                                  c("Arctic Network Musk Oxen" = 'arcn_muskox',
+                                    "Denali Bears" = 'dena_bears',
+                                    "Denali Coyotes" = 'dena_coyote',
+                                    "Denali Wolves" = 'dena_wolves',
+                                    "Gates of the Arctic Bears" = 'gaar_bears',
+                                    "Gates of the Arctic Moose" = 'gaar_moose',
+                                    "Katmai Bears" = 'katm_bears',
+                                    "Lake Clark Bears" = 'lacl_bears',
+                                    "Lake Clark Wolves" = 'lacl_wolves',
+                                    "Lake Clark Sheep" = 'lacl_sheep',
+                                    "Western Arctic Caribou Herd" = 'wach_caribou',
+                                    "Wrangell-St Elias Caribou" = 'wrst_caribou',
                                     "Upload Movebank format file" = 'upload'),
                                   selected = "upload")
-      #             ,
-      # tags$style("input[type='radio']+span{font-weight: 600;font-size: small;}")
                   ),
-          column(4, numericInput("sample_size", "Sample Size",
-                                 value = 100, step = 50)),
-          column(12, fileInput('tele_file', label = NULL)),
-          column(12, fileInput("load_data", label = "Load Saved Data"
-                               # ,
-                               # placeholder = "Session zip"
-                           # buttonLabel = "Load Session ..."
-                           )),
-          column(5, offset = 7, help_button("import"))
-          # column(7, checkboxGroupInput("app_options", label = NULL,
-          #             choiceNames = list(div(icon("video-camera"),
-          #                                    HTML('&nbsp;'),
-          #                                    "Record Actions"),
-          #                                div(icon("exclamation-triangle"),
-          #                                    HTML('&nbsp;'),
-          #                                    "Capture Error Messages"),
-          #                                div(icon("cogs"),
-          #                                    HTML('&nbsp;'),
-          #                                    " Disable Parallel Mode")),
-          #             choiceValues = list("record_on",
-          #                                 "log_error",
-          #                                 "no_parallel"),
-          #             selected = "record_on")),
-
+          column(12, fileInput('tele_file', label = NULL))
            )
     )
-movebank_login_box <- box(title = "Movebank Login",
-                          status = "warning", solidHeader = TRUE, width = 6,
-                          # height = ctmmweb:::STYLES$height_movebank_login_box,
-                          fluidRow(
-                            column(12, br(), br()),
-                            column(12,
-                                  textInput("user", "User Name"), br(),
-                                  passwordInput("pass", label = "Password")),
-                            column(12, br(), br(), br()),
-                            column(5, actionButton("login", "Login",
-                                          icon = icon("sign-in"),
-                                          style = ctmmweb:::STYLES$page_action)),
-                            column(5, offset = 2,
-                                  help_button("login"))
-                            # ,
-                            # column(12, br())
-                            ))
-movebank_studies_box <- box(title = "Movebank Studies",
-                                            collapsible = TRUE,
-                            status = "primary", solidHeader = TRUE, width = 12,
-      fluidRow(column(9, verbatimTextOutput("all_studies_stat")),
-               column(3, checkboxInput("data_manager",
-                                       "Only show I'm data manager"))),
-      fluidRow(column(12, DT::dataTableOutput('studies'))))
-movebank_study_detail_box <- box(title = "Selected Study Detail",
-                                                 width = 12,
-                                 collapsible = TRUE,
-                                 status = "primary", solidHeader = TRUE,
-     fluidRow(column(3, actionButton("download_movebank",
-                                     "Download",
-                                     icon = icon("cloud-download"),
-                                     style = ctmmweb:::STYLES$page_action)),
-              column(4, offset = 1, uiOutput("open_study")),
-              column(3, offset = 1, help_button("download_movebank")
-                     )),
-     hr(),
-     fluidRow(column(12, DT::dataTableOutput("study_detail"))))
-movebank_study_preview_box <- box(title = "Selected Study Data",
-                                                  width = 12,
-                                  status = "primary", solidHeader = TRUE,
-                                  collapsible = TRUE,
-      fluidRow(column(3, downloadButton("save_movebank", "Save",
-                                        icon = icon("floppy-o"),
-                                        style = ctmmweb:::STYLES$download_button)),
-               column(3, offset = 6,
-                      actionButton("import_movebank", "Import",
-                                   icon = icon("arrow-right"),
-                                   style = ctmmweb:::STYLES$page_switch))),
-      hr(),
-      fluidRow(column(12, verbatimTextOutput("study_data_response"))),
-      fluidRow(column(12, DT::dataTableOutput('study_preview'))))
+
 # p2. plots ----
 data_summary_box <- box(title = "1. Individuals",
                                         status = "info",
@@ -676,11 +611,9 @@ body <- dashboardBody(
   tabItems(
     # tabItem(tabName = "intro", fluidPage(includeMarkdown("help/workflow1.md"))),
     tabItem(tabName = "import",
-                            fluidRow(app_options_box,
-                                     upload_box, movebank_login_box),
-                            fluidRow(movebank_studies_box,
-                                     movebank_study_detail_box,
-                                     movebank_study_preview_box)),
+            fluidRow(app_options_box,
+                     upload_box
+                     )),
     tabItem(tabName = "plots",
             fluidRow(data_summary_box,
                      location_plot_box,
