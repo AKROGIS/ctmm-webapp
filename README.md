@@ -30,7 +30,7 @@ https://github.com/ctmm-initiative/ctmmweb
 
     ```r
     if (!require("devtools")) install.packages("devtools")
-    devtools::install_github("ctmm-initiative/ctmmweb")
+    devtools::install_github("regan-sarwas/ctmmweb")
     ```
 
 3. Run the app in one of following methods:
@@ -47,7 +47,16 @@ https://github.com/ctmm-initiative/ctmmweb
     app(buffalo)
     ```
 
-    This will launch the app locally with system default browser. Chrome is recommended for compatibility reasons. You can copy the url into Chrome if it was not launched by Chrome. After the browser windows was closed, you may need to stop the R session in R console manually (`Esc` or `Ctrl+C`) to quit the app.
+   Or run the local developer version for testing/demonstrations, without internet downloads, etc.
+
+    ```bash
+    $ cd $repo_dir
+    $ R
+    > shiny:::runApp(appDir=getwd(), port=7893, host="0.0.0.0")
+    ctrl-c # to quit
+    ```
+
+    This will launch the app locally with system default browser. Chrome is recommended for compatibility reasons. You can copy the url into Chrome if it was not launched by Chrome.
 
   More details about installation and compatibility problems can be [found here.](https://ctmm-initiative.github.io/ctmmwebdoc/articles/installation.html)
 

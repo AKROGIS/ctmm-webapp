@@ -102,7 +102,28 @@ upload_box <- box(title = "Local Data Import",
                                     "Upload Movebank format file" = 'upload'),
                                   selected = "upload")
                   ),
-          column(12, fileInput('tele_file', label = NULL))
+          column(12, fileInput('tele_file', label = NULL)),
+          column(12, fileInput("load_data", label = "Load Saved Data"
+                               # ,
+                               # placeholder = "Session zip"
+                           # buttonLabel = "Load Session ..."
+                           )),
+          column(5, offset = 7, help_button("import"))
+          # column(7, checkboxGroupInput("app_options", label = NULL,
+          #             choiceNames = list(div(icon("video-camera"),
+          #                                    HTML('&nbsp;'),
+          #                                    "Record Actions"),
+          #                                div(icon("exclamation-triangle"),
+          #                                    HTML('&nbsp;'),
+          #                                    "Capture Error Messages"),
+          #                                div(icon("cogs"),
+          #                                    HTML('&nbsp;'),
+          #                                    " Disable Parallel Mode")),
+          #             choiceValues = list("record_on",
+          #                                 "log_error",
+          #                                 "no_parallel"),
+          #             selected = "record_on")),
+
            )
     )
 
@@ -615,11 +636,10 @@ body <- dashboardBody(
   # match menuItem
   tabItems(
     # tabItem(tabName = "intro", fluidPage(includeMarkdown("help/workflow1.md"))),
-    tabItem(tabName = "import",
+    shinydashboard::tabItem(tabName = "import",
             fluidRow(app_options_box,
-                     upload_box
-                     )),
-    tabItem(tabName = "plots",
+                     upload_box)),
+    shinydashboard::tabItem(tabName = "plots",
             fluidRow(data_summary_box,
                      location_plot_box,
                      histogram_facet_box
