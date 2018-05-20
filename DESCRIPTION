@@ -1,16 +1,16 @@
 Package: ctmmweb
 Type: Package
 Title: Web App For ctmm
-Version: 0.1.0
+Version: 0.1.0.9000
 Authors@R: person("Xianghui", "Dong", email = "xhdong@umd.edu",
                   role = c("aut", "cre"))
 Maintainer: Xianghui Dong <xhdong@umd.edu>
-Description: Shiny app for ctmm. Various utility functions can also be used 
-    individually.
+Description: Shiny app for ctmm. Many features are also exported as package 
+    functions.
 License: GPL-3 + file LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 6.0.1
+RoxygenNote: 6.0.1.9000
 Roxygen: list(markdown = TRUE)
 Imports: shiny,
     crayon,
@@ -36,8 +36,8 @@ Imports: shiny,
     XML,
     xml2,
     zip
-Remotes: rstudio/leaflet,
-    ctmm-initiative/ctmm
+Remotes: ctmm-initiative/ctmm
 Suggests: knitr,
-    rmarkdown
+    rmarkdown,
+    shiny
 VignetteBuilder: knitr

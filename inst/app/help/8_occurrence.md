@@ -1,3 +1,4 @@
-- By default confidence interval is 95% for contours to be displayed.
-- You can input a series of comma separated values like `20, 50, 95`
-- If input is empty, no contour will be displayed.
+- Check [ctmm::plot.telemetry](https://ctmm-initiative.github.io/ctmm/reference/plot.telemetry.html) for details:
+  - `Contour`: `level.UD`. You can input a series of comma separated values like `20, 50, 95` in contours input, note they are percentage values so the real value will be `0.20, 0.50, 0.95`. 
+  - `Confidence Envelopes` : `level`.
+  - `Location Points` : also draw telemetry locations.

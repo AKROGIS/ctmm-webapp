@@ -4,6 +4,7 @@
 info_tele <- function(object) {
   # some data have one record for some individual, diff will return numeric(0), then median got NULL
   diffs <- diff(object$t)
+  # the median of diff
   sampling_interval <- ifelse(length(diffs) == 0,
                               0,
                               stats::median(diffs))
@@ -11,15 +12,12 @@ info_tele <- function(object) {
   # above work on t which is cleaned by ctmm. original timestamp could have missing values
   t_start <- min(object$timestamp, na.rm = TRUE)
   t_end <- max(object$timestamp, na.rm = TRUE)
+  # format the duration/interval units in list to make them use same unit
   data.table(identity = object@info$identity,
-             interval_s = sampling_interval,
-             interval = format_seconds_f(sampling_interval)(sampling_interval),
-             duration_s = sampling_range,
-             duration = format_seconds_f(sampling_range)(sampling_range),
-             sampling_start = t_start,
-             sampling_end = t_end,
              start = format_datetime(t_start),
              end = format_datetime(t_end),
+             interval = sampling_interval,
+             duration = sampling_range,
              points = nrow(object))
 }
 wrap_single_telemetry <- function(tele_obj){
@@ -37,7 +35,7 @@ sort_tele_list <- function(tele_list) {
 }
 #' Report data summary on telemetry object/list
 #'
-#' @param tele_obj_list [ctmm::as.telemetry] telemetry object or list
+#' @param tele_obj_list [ctmm::as.telemetry()] telemetry object or list
 #'
 #' @return A summary `data.table`
 #' @export
@@ -45,7 +43,10 @@ sort_tele_list <- function(tele_list) {
 report <- info_tele_list <- function(tele_obj_list){
   tele_list <- wrap_single_telemetry(tele_obj_list)
   info_list <- lapply(tele_list, info_tele)
-  rbindlist(info_list)
+  dt <- rbindlist(info_list)
+  name_unit_list <- list("interval" = pick_unit_seconds,
+                         "duration" = pick_unit_seconds)
+  format_dt_unit(dt, name_unit_list)
 }
 #' Calculate distance to median center for each animal location
 #'
@@ -56,7 +57,7 @@ report <- info_tele_list <- function(tele_obj_list){
 #'
 #' @param animals_dt location `data.table` from [combine()]. The original input
 #'   `data.table` will be modified in place by reference after calculation.
-#' @param tele_list the [ctmm::as.telemetry] telemetry obj list. Calculation
+#' @param tele_list the [ctmm::as.telemetry()] telemetry obj list. Calculation
 #'   need error information from it.
 #' @param device_error standardized device error in meter. Example: GPS: 10,
 #'   VHF: 100
@@ -228,27 +229,28 @@ tele_list_to_dt <- function(tele_obj_list) {
   # animals_data_dt <- assign_speed(animals_data_dt)
   return(animals_data_dt)
 }
-#' Generate combined location and info `data.table` from telemetry object/list
+#' Collect location and info `data.table` from telemetry object/list
 #'
-#' A [ctmm::as.telemetry] telemetry list hold mutiple animal data in separate
+#' A [ctmm::as.telemetry()] telemetry list hold mutiple animal data in separate
 #' list items, each item have the animal location data in a data frame, and
 #' other information in various slots. This structure supports flexible S3
 #' methods for telemetry object. However to plot multiple animals location
-#' together with `ggplot2` we need to combine all location data into a single
+#' together with `ggplot2` we need to collect all location data as a single
 #' `data.frame` with an animal id column.
 #'
-#' This function combine any input telemetry object/List into a `data.table` of
-#' location data, and another information `data.table` for animals. `data.table`
-#' is chosen over `data.frame` for much better performance. This data structure
-#' is also used in a lot of places in app, which works on any selected subset of
-#' full data in almost all steps.
+#' This function convert any input telemetry object/List into a list of 1.
+#' `data.table` of location data, and 2. animal information `data.table`.
+#' `data.table` is chosen over `data.frame` for much better performance. This
+#' data structure is also used in a lot of places in app, which works on any
+#' selected subset of full data in almost all steps.
 #'
-#' @param tele_obj_list [ctmm::as.telemetry] telemetry object/list
+#' @param tele_obj_list [ctmm::as.telemetry()] telemetry object/list
 #'
-#' @return list of - `data_dt`: all animals combined in one data.table - `info`:
-#'   animal information table
+#' @return list of
+#' - `data_dt`: all animals collected in one data.table
+#' - `info`: animal information table
 #' @export
-combine <- combine_tele_list <- function(tele_obj_list) {
+collect <- combine_tele_list <- function(tele_obj_list) {
   return(list(data_dt = tele_list_to_dt(tele_obj_list),
               info = report(tele_obj_list)))
 }

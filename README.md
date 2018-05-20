@@ -29,8 +29,10 @@ https://github.com/ctmm-initiative/ctmmweb
 2. Start R or RStudio, run these in console to install dependency packages. Sometimes you may need to restart R in the process.
 
     ```r
-    if (!require("devtools")) install.packages("devtools")
-    devtools::install_github("regan-sarwas/ctmmweb")
+    if (!require("remotes")) install.packages("remotes")
+    remotes::install_github("regan-sarwas/ctmmweb")
+    # sometimes you may want to use a certain version, for example the format of saved data may evolve with new versions
+    # remotes::install_github("ctmm-initiative/ctmmweb", ref = "commit or tag name")
     ```
 
 3. Run the app in one of following methods:
@@ -61,7 +63,7 @@ https://github.com/ctmm-initiative/ctmmweb
   More details about installation and compatibility problems can be [found here.](https://ctmm-initiative.github.io/ctmmwebdoc/articles/installation.html)
 
 ### Hosted app
-Just open [the hosted app](https://ctmm.shinyapps.io/ctmmweb/) with browser (Chrome recommended).
+Just open [the hosted app](https://ctmm.shinyapps.io/ctmmweb/) ([short url: http://tiny.cc/ctmmweb](http://tiny.cc/ctmmweb)) with browser (Chrome recommended).
 
 This is more intended for demonstration purposes because
 

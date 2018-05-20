@@ -55,12 +55,34 @@ color_break <- function(bin_count, animals_dt, col_name, unit_formatter) {
               vec_formatter = vec_formatter))
 }
 # home range ----
-# take the input in home range page, note the input need to be divided by 100
-parse_CI_levels <- function(levels_text) {
-  if (stringr::str_trim(levels_text) == "") {
-    return(0.95)
+# parse text input of comma separated values
+parse_comma_text_input <- function(comma_text, default_value) {
+  items <- stringr::str_trim(stringr::str_split(comma_text, ",")[[1]])
+  parsed_values <- as.numeric(items[items != ""])
+  # non valid input is checked, rejected, show message
+  if ((length(parsed_values) == 0) || (is.na(parsed_values))) {
+    shiny::showNotification("Only number or comma separated numbers are accepted",
+                            duration = 5, type = "error")
+    return(default_value)
   } else {
-    items <- stringr::str_trim(stringr::str_split(levels_text, ",")[[1]])
-    as.numeric(items[items != ""]) / 100
+    return(parsed_values)
   }
 }
+# for home range/occur level input, divid by 100, take default value when no valid input
+parse_levels.UD <- function(levels_text) {
+  parse_comma_text_input(levels_text, default_value = 95) / 100
+}
+# package installation time in current time zone. This is used in ui (app info dialog) and server (start info).
+# get_pkg_installation_time <- function(){
+#   format(file.mtime(system.file("app", package = "ctmmweb")), usetz = TRUE)
+# }
+# debugging helper ----
+# print variable information. it's difficult to get expression name after transfered as a function parameter. so need to use name string as parameter
+# not working because of environment. tricky with get.
+# show_by_name <- function(var_name_string) {
+#   cat(crayon::white$bgYellow$black(var_name_string), ":",
+#       get(var_name_string, envir = parent.env(environment())), "\n")
+# }
+# catn <- function(marker, value) {
+#   cat(crayon::white$bgYellow$black(marker), ":", value, "\n")
+# }

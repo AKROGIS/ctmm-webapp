@@ -1,8 +1,12 @@
-## current
+## version 0.1.0.9000, current alpha version
 - Update outlier page to use latest ctmm functions which take errors into account for both distance and speed.
 - Use home range plot for overlap location plot tab.
 - `app()` now open in system default browser instead of the RStudio embedded browser to avoid compatibility problems.
-- added package build date in message menu, console log and work report.
+- added package installation date in message menu, console log and work report. This can help to identify which version was installed. I didn't find an automatic way to save build date in package building.
+- There was some problem with current version `devtools::install_github`, namely existing packages get reinstalled, compiling dependency packages unneeded. `remotes` is now used for installing from github directly. A CRAN like repository is also hosted as alternative.
+- Added consistent plot control to home range plot and occurrence plot.
+- Variogram plot in model selection page are rearranged into 3 tabs.
+- units in tables were moved to column header so the columns can be sorted properly.
 
 ## version 0.1.0, 2018/02/08
 - Moved package website to separate repo to reduce package download size and time.
