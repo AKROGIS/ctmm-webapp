@@ -1,3 +1,36 @@
+# see documentation and example in 05_1_model_variogram.Rmd / align list
+align_curve_lists <- function(list_lst) {
+  dimension <- length(list_lst)
+  # no 1st sublist so need to separate processing
+  if (dimension == 0) return(NULL)
+  # by length of sublist 1
+  lapply(seq_along(list_lst[[1]]), function(i) {
+    lapply(list_lst, getElement, i)  # function format of `[[`
+  })
+}
+# kmeans detection ----
+detect_clusters <- function(diff_t, k){
+  cl <- try(stats::kmeans(diff_t, k))
+  if (class(cl) == "try-error") {
+    shiny::showNotification("Error in kmeans, check error messages",
+                            duration = 5, type = "error")
+    return(NULL)
+  }
+  dtv <- sapply(1:k, function(i) {
+    round(median(diff_t[which(cl$cluster == i)]), 2)
+  })
+  return(sort(dtv))
+}
+# need to be in a function so it's easier to run per individual
+filter_inc_t <- function(inc_t, prob = 0.05) {
+  range_to_keep <- range(quantile(inc_t, probs = c(prob, 1 - prob),
+                                  na.rm = TRUE))
+  # need to keep same number of values, so assign NA instead of return subset
+  inc_t[inc_t < range_to_keep[1] | inc_t > range_to_keep[2]] <- NA_real_
+  return(inc_t)
+}
+
+# plot ----
 # the app can use a 0.72 cex but package functions may need a smaller default.
 # S3 generic on list https://github.com/ctmm-initiative/ctmm/blob/master/R/generic.R#L109
 # plot.list <- ctmm:::plot.list
@@ -22,6 +55,9 @@
 #'   overlay guesstimate variogram.
 #'   - list of fitted models from [ctmm::ctmm.select()] on `vario_list`, overlay
 #'   modeled variogram.
+#'   - It can be a list of list, with each item provide list of `CTMM` objects
+#'   that to be plotted in each variogram. `model_color` can be a vector
+#'   to specify color for each model.
 #' @param title_vec vector of figure titles. If not provided, names of
 #' `vario_list` or `model_list` will be used.
 #' @param fraction Fraction of time-lag range, 0 ~ 1.
@@ -31,7 +67,9 @@
 #' - Absolute mode operate on the max Time-lag range individual in group, and
 #' all others scaled with same X, Y axes for easier comparison.
 #' @param cex The magnification factor of plot text and symbols. See [par()].
-#' @param model_color The color of model variogram
+#' You may need a smaller value if figure margins is too large
+#' @param model_color The color of model variogram. It'll be same for every
+#' plot.
 #' @param columns The columns of the group plot layout.
 #'
 #' @export
@@ -42,6 +80,12 @@ plot_vario <- function(vario_list, model_list = NULL, title_vec = NULL,
     title_vec <- if (is.null(model_list)) names(vario_list)
     else names(model_list)
   }
+  # # if two curves are identical, only draw one to avoid color mixing from 2 colors. this doesn't work in fine-tune page because the model constructed from slider values will have tiny difference with original, thus not equal. but this acceptable. this only check 1 and 2, didn't check 3rd.
+  # for (i in 1:length(model_list)) {
+  #   if (identical(model_list[[i]][[1]], model_list[[i]][[2]])) {
+  #     model_list[[i]][[2]] <- NULL
+  #   }
+  # }
   row_count <- ceiling(length(vario_list) / columns)
   # the shared group code is not much, and it involves env setup and restoration, would need on.exit if abstracted to function. just copy, basically 3 lines.
   def.par <- graphics::par(no.readonly = TRUE)

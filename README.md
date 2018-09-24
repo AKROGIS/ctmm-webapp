@@ -23,15 +23,22 @@ https://github.com/ctmm-initiative/ctmmweb
 1. Install [the latest R](https://www.r-project.org/).
 
     Note R 3.4 bring some big changes, so it's better to upgrade all the existing packages if you have earlier version installed.
-
+    ggplot2 3.0 also have some breaking changes and more warnings, please upgrade ggplot2 to 3.0 as the app can only be compatible with the latest stable release.
+    
     [RStudio](https://www.rstudio.com/products/rstudio/download/) is not required but recommended.
 
 2. Start R or RStudio, run these in console to install dependency packages. Sometimes you may need to restart R in the process.
 
     ```r
+    # install using devtools
+    if (!require("devtools")) install.packages("devtools")
+    devtools::install_github("ctmm-initiative/ctmmweb")
+    # sometimes you may want to use a certain version, for example the format of saved data may evolve with new versions
+    # devtools::install_github("ctmm-initiative/ctmmweb", ref = "commit or tag name")
+    
+    # Alternatively, if you met problem with devtools, sometimes it's easier to work with remotes, which have similar syntax and less dependency
     if (!require("remotes")) install.packages("remotes")
     remotes::install_github("regan-sarwas/ctmmweb")
-    # sometimes you may want to use a certain version, for example the format of saved data may evolve with new versions
     # remotes::install_github("ctmm-initiative/ctmmweb", ref = "commit or tag name")
     ```
 

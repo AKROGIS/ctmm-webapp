@@ -75,6 +75,29 @@ STYLES <- list(
   page_switch = "background-color: #7ad0f7;font-weight: 500;width:100%;",
   external_link = "background-color: #a7c1fc;font-weight: 500;width:100%;",
   download_button = "color: #2196F3;width:100%;",
-  help_button = "background-color: #8bc34a;width:100%;"
+  help_button = "background-color: #8bc34a;width:100%;",
+  # vertical align checkbox, radio buttons to button in same line.
+  align_down = "margin-top: 5px;",
+  align_up = "margin-top: -5px;",
+  align_up_group = "margin-top: -12px;"
   # info box blue #00c0ef
 )
+# tab name and titles ----
+# the page title in report chapters need to sync with ui. save them in one list
+PAGE_title <- list(import = "Import Data",
+                   plots = "Visualization",
+                   filter = "Filter Outliers",
+                   subset = "Time Subsetting",
+                   model = "Model Selection",
+                   homerange = "Home Range",
+                   overlap = "Overlap",
+                   occurrence = "Occurrence",
+                   map = "Map")
+# variogram curve colors ----
+## need this in curve checkbox (in ui) and server code, put it into package so it can be shared.
+# various curve colors in variogram, tuned color is brighter
+CTMM_colors <- c("#FF7970", "#803D38", "#00BA38", "#619CFF", "#314E80")
+# need to map with data structure. current is either original or tuned (if tuned).
+names(CTMM_colors) <- c("guess", "guess_current",
+                        "init_ctmm",
+                        "model", "model_current")

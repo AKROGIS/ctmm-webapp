@@ -1,4 +1,23 @@
 # helper functions that too specific to shiny app and no need to be put inside package. Some are exported for individual uses. All functions are placed in one file for easier search for now.
+# build id_pal from info. this is needed in importing tele data, and restoring session data.
+build_id_pal <- function(info) {
+  leaflet::colorFactor(
+    scales::hue_pal()(nrow(info)), info$identity, ordered = TRUE
+  )
+}
+# parse text input of numerical values
+parse_num_text_input <- function(num_text) {
+  parsed_values <- as.numeric(num_text)
+  # non valid input is checked, rejected, show message
+  if ((length(parsed_values) == 0) || (is.na(parsed_values))) {
+    shiny::showNotification("Not a valid number",
+                            duration = 5, type = "error")
+    # return false to trigger req
+    return(FALSE)
+  } else {
+    return(parsed_values)
+  }
+}
 
 # divide x into interval_count intervals ----
 # Taken from https://github.com/wch/r-source/blob/trunk/src/library/base/R/cut.R
@@ -28,7 +47,9 @@ divide_date_time <- function(x, interval_count) {
 }
 # outlier ----
 color_break <- function(bin_count, animals_dt, col_name, unit_formatter) {
-  color_bin_breaks <- divide(animals_dt[[col_name]], bin_count)
+  dt <- copy(animals_dt)
+  # should not modify input dt
+  color_bin_breaks <- divide(dt[[col_name]], bin_count)
   # cut generate roughly equal length breaks (with adjustment to include extremes, no need to change this) which sometimes have a negative first value, not good for distanc/speed. shift the breaks so that the first value is 0.
   if (color_bin_breaks[1] < 0) {
     color_bin_breaks <- color_bin_breaks + abs(color_bin_breaks[1])
@@ -38,18 +59,18 @@ color_break <- function(bin_count, animals_dt, col_name, unit_formatter) {
   vec_formatter <- unit_formatter(color_bin_breaks)
   color_bin_breaks_units <- vec_formatter(color_bin_breaks)
   color_bin_labels <- paste0(">= ", utils::head(color_bin_breaks_units, -1L))
-  animals_dt[, paste0(col_name, "_color_factor") :=
-               cut(animals_dt[[col_name]], breaks = color_bin_breaks,
+  dt[, paste0(col_name, "_color_factor") :=
+               cut(dt[[col_name]], breaks = color_bin_breaks,
                    labels = color_bin_labels, right = FALSE)]  # closed on left to include 0
   # remove empty bins in labels
-  his <- graphics::hist(animals_dt[[col_name]], breaks = color_bin_breaks, plot = FALSE)
+  his <- graphics::hist(dt[[col_name]], breaks = color_bin_breaks, plot = FALSE)
   # with n+1 breaks for n interval/bin count, using count index on breaks will get the left side for each break
   non_empty_indice <- which(his$counts != 0)
   # need both side to label the plot properly. this only works when 2 vectors have same length. but I don't like the other method of recyling index new_vec[c(TRUE, FALSE)]
   non_empty_breaks <- c(rbind(color_bin_breaks[non_empty_indice],
                               color_bin_breaks[non_empty_indice + 1]))
-  # data.table is modified by reference, but we don't have global dt in app, often in reactive, so need to return it.
-  return(list(animals_dt = animals_dt,
+  # still use the animals_dt name because too many plot code is using that name, too much hassle to change them. just need to know this animals_dt is a local version with added columns
+  return(list(animals_dt = dt,
               color_bin_breaks = color_bin_breaks,
               non_empty_breaks = non_empty_breaks,
               vec_formatter = vec_formatter))

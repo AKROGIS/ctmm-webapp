@@ -4,19 +4,45 @@ options(shiny.maxRequestSize = 2000*1024^2)
 # options(shiny.trace = FALSE)
 # enable more debugging and messages
 VERIFY_DATA_SYNC <- FALSE
+PKG_INSTALLATION_TIME <- format(file.mtime(system.file("app", package = "ctmmweb")), usetz = TRUE)
 
 server <- function(input, output, session) {
+  # rendering message menu dynamically to avoid call pkg_installation_time twice
+  output$messageMenu <- renderMenu({
+    dropdownMenu(type = "messages",
+                 # from for first line, message 2nd line smaller font
+                 messageItem(
+                   from = "Project in Github",
+                   message = "Documentation, Source, Citation",
+                   icon = icon("github"),
+                   href = "https://github.com/ctmm-initiative/ctmmweb"),
+                 messageItem(
+                   from = "Installed On",
+                   message = PKG_INSTALLATION_TIME,
+                   icon = icon("calendar-o")),
+                 messageItem(
+                   from = "Issues",
+                   message = "Report Issues",
+                   icon = icon("exclamation-circle"),
+                   href = "https://github.com/ctmm-initiative/ctmmweb/issues"),
+                 badgeStatus = NULL,
+                 icon = icon("info-circle fa-lg"),
+                 headerText = "App Information"
+    )
+  })
+  # values that hold them all ----
+  # ideally should put everything more organized. could print str() after all possible action tried, in workreport action. then organize like this:
+  # input_tele_list
+  # data:
+  # page: each page data but want to hold between pages
   values <- reactiveValues()
   # log/error options ----
+  ## used lots of global variables or external variables not in function parameter(or even modified global variables), so not in package now. to move them into package need to add some parameters which become quite verbose.
   # log functions will use these options, so need to prepare them first
-  # test checkbox status passively, one time read when called. wrap it into a function because if we decided to switch between independent checkbox or checkboxgroup, the changes only happens here, not every calling place.
-  option_selected <- function(option) {
+  # test some input status passively, one time read when called. wrap it into a function because if we decided to switch between independent checkbox or checkboxgroup, the changes only happens here, not every calling place.
+  input_value <- function(option) {
     isolate(input[[option]])
   }
-  # inject a browser when debug button is clicked.
-  # if (DEBUG_BUTTON) {
-  #   observeEvent(input$inject_debug, browser())
-  # }
   # global LOG variables ----
   # one time check if app is running in hosted mode
   APP_local <- (isolate(session$clientData$url_hostname) == "127.0.0.1")
@@ -31,7 +57,7 @@ server <- function(input, output, session) {
   session_tmpdir <- file.path(tempdir(), session$token)
   # log functions ----
   # add extra lines in markdown format without timestamp, this will not appear in console. vec can be a vector. all appends to global variable happen here, easier to manage.
-  log_add_rmd <- function(vec, on = option_selected("record_on")) {
+  log_add_rmd <- function(vec, on = input_value("record_on")) {
     if (!on) return()
     # used as function, will search variable in parent first, only go to global when not found. so need to make sure parent function don't have this
     LOG_rmd_vec <<- c(LOG_rmd_vec, vec)
@@ -48,7 +74,8 @@ server <- function(input, output, session) {
   # usually console content is same with markdown, except the data frame table need to be plain in console, table in markdown. detail will be in 2nd line with code format
   log_msg_console <- function(msg, detail = "") {
     time_stamp <- stringr::str_c("[", Sys.time(), "]")
-    if (detail != "") {
+    # some detail are vec
+    if (length(detail) > 1 || detail != "") {
       detail <- stringr::str_c("\n\t", detail)
     }
     if (LOG_console) {
@@ -59,7 +86,7 @@ server <- function(input, output, session) {
     return(time_stamp)
   }
   # setting default value to use app control, only need to override it in internal usage
-  log_msg <- function(msg, detail = "", on = option_selected("record_on")) {
+  log_msg <- function(msg, detail = "", on = input_value("record_on")) {
     if (!on) return()
     time_stamp <- log_msg_console(msg, detail)
     # need extra new line for markdown
@@ -74,30 +101,31 @@ server <- function(input, output, session) {
     log_add_rmd(stringr::str_c("![](", pic_name, ")"))
     return(file.path(LOG_folder, pic_name))
   }
-  log_save_ggplot <- function(g, f_name, on = option_selected("record_on")) {
+  log_save_ggplot <- function(g, f_name, on = input_value("record_on"),
+                              dpi = input_value("plot_dpi")) {
     if (!on) return(g)
     # need to save current device and restore it. otherwise plotting in R console will cause app draw plot to RStudio plot window. https://stackoverflow.com/questions/47699956/ggplot-in-shiny-app-go-to-rstudio-plot-window/.
     cur_dev <- dev.cur()
     print(system.time(ggplot2::ggsave(filename = log_prepare_plot(f_name),
-                                      plot = g)))
+                                      plot = g, dpi = dpi)))
     dev.set(cur_dev)
     return(g)
   }
   # only used for variogram, with specific format and parameters, some came from input. we don't need to return something in end of renderPlot for basic plot, since plot seemed to be side effect. (ggplot need the object to be overriden so interactive plot can have proper scale, see ?renderPlot). It also don't have the ggsave changing current device problem
   log_save_vario <- function(f_name, rows, cols,
-                             on = option_selected("record_on")) {
+                             on = input_value("record_on")) {
     if (!on) return()
     grDevices::dev.print(png, file = log_prepare_plot(f_name),
                          units = "in", res = 220,
                          width = cols * 4, height = rows * 3)
   }
   # pdf is better for home range, occurrence
-  log_save_UD <- function(f_name, on = option_selected("record_on")) {
+  log_save_UD <- function(f_name, on = input_value("record_on")) {
     if (!on) return()
     grDevices::dev.copy2pdf(file = log_prepare_plot(f_name, f_ext = ".pdf"))
   }
-  # save dt into markdown table or csv. note the msg could be in different format
-  log_dt_md <- function(dt, msg, on = option_selected("record_on")) {
+  # save dt into markdown table. note the msg could be in different format
+  log_dt_md <- function(dt, msg, on = input_value("record_on")) {
     if (!on) return()
     # need the extra \t because log_msg put \t before first line of detail
     time_stamp <- log_msg_console(msg,
@@ -107,12 +135,12 @@ server <- function(input, output, session) {
                   knitr::kable(dt, format = "markdown")))
   }
   # save dt in csv, need different msg format and a file name, so in independent function. f_name is used for part of csv file name, full name will be detail part of message
-  log_dt_csv <- function(dt, msg, f_name, on = option_selected("record_on")) {
+  log_dt_csv <- function(dt, msg, f_name, on = input_value("record_on")) {
     if (!on) return()
     csv_name <- stringr::str_c(f_name, "_",
                                ctmmweb:::current_timestamp(),
                                ".csv")
-    fwrite(dt, file = file.path(LOG_folder, csv_name))
+    fwrite(dt, file = file.path(LOG_folder, csv_name), dateTimeAs = "write.csv")
     log_msg(msg, detail = csv_name)
     log_add_rmd(stringr::str_c("[", csv_name, "](", csv_name, ")"))
   }
@@ -134,52 +162,41 @@ output:
 '
   log_add_rmd(rmd_header)
   # page observer ----
-  # add subtitle in log for every page. need to sync with ui.R for this.
-  page_title <- list(import = "Import Data",
-                     plots = "Visualization",
-                     filter = "Filter Outliers",
-                     subset = "Time Subsetting",
-                     model = "Model Selection",
-                     homerange = "Home Range",
-                     overlap = "Overlap",
-                     occurrence = "Occurrence",
-                     map = "Map",
-                     report = "Work Report")
-  log_page <- function(title, on = option_selected("record_on")) {
+  ## report page changes, need to be ready befoer log start
+  # ANONYMIZED_data ----
+  ANONYMIZED_data <- FALSE
+  log_page <- function(title, on = input_value("record_on")) {
     if (!on) return()
     log_msg_console(stringr::str_c("## ", title))
     log_add_rmd(stringr::str_c("\n## ", title, "\n"))
   }
-  # log each page, also notify the requirement of time subsetting. we want to show this everytime switched to this page. if put inside color_bin_animal it will only show once if switched back and forth.
+  # log page, also notify the requirement of time subsetting. we want to show this everytime switched to this page. if put inside color_bin_animal it will only show once if switched back and forth.
   observeEvent(input$tabs, {
     req(values$data)
-    # since we req data, so it will not record pages without data. This is good.
-    log_page(page_title[[input$tabs]])
+    # it will not record pages without data because req data.
+    log_page(ctmmweb:::PAGE_title[[input$tabs]])
     # time subset page need single animal be selected
-    if (input$tabs == "subset") {
-      if (length(input$individuals_rows_selected) != 1) {
-        shinydashboard::updateTabItems(session, "tabs", "plots")
-        showNotification(
-          "Please select single individual first before time subsetting",
-          type = "error", duration = 6)
-      }
+    if ((input$tabs == "subset") &&
+        (length(input$individuals_rows_selected) != 1)) {
+      shinydashboard::updateTabItems(session, "tabs", "plots")
+      showNotification(
+        "Please select single individual first before time subsetting",
+        type = "error", duration = 6)
     }
-    # # overlap page will jump to home range if it's not calculated yt
-    # if (input$tabs == "overlap") {
-    #   if (!ctmmweb:::reactive_validated(select_models_hranges())) {
-    #     shinydashboard::updateTabItems(session, "tabs", "homerange")
-    #     showNotification(
-    #       "Please check home range first",
-    #       type = "warning", duration = 5)
-    #   }
-    # }
+    # disable overlap and map page for anonoymized data
+    if (ANONYMIZED_data && (input$tabs %in% c("overlap", "map"))) {
+      shinydashboard::updateTabItems(session, "tabs", "plots")
+      showNotification(
+        "Overlap and Map features disabled for anonymized data",
+        type = "error", duration = 6)
+    }
   })
   # call outside of reactive context need isolate, they are also one time call only run when app started.
   # app log start ----
   # record pkg build date for easier issue report. it will also appear in work report. hosted app user can click the info button.
   log_msg("App started", paste0("Installed On: ", PKG_INSTALLATION_TIME))
   # first page need to be added manually since no page switching event fired
-  log_page(page_title$import)
+  log_page(ctmmweb:::PAGE_title$import)
   # log app options ----
   # just log option changes, the value is taken directly when needed.
   observeEvent(input$record_on, {
@@ -188,7 +205,7 @@ output:
                            if (input$record_on) "On" else "Off"), on = TRUE)
   })
   # help module server ----
-  # help function now have proper folder
+  # need app folder so was placed here, otherwise need to add parameter
   click_help <- function(input, output, session, title, size, file){
     observeEvent(input$help, {
       showModal(modalDialog(
@@ -203,9 +220,11 @@ output:
   callModule(click_help, "app_options", title = "App Options",
              size = "l", file = "help/1_app_options.md")
   # capture error ----
-  # the setup is run in beginning, also run with checkbox event. don't run twice if already exist
+  ## 1st version always capture in web mode, not capture in local mode. 2nd version capture by default, switch by checkbox, which require setup in beginning, each checkbox event need to clean up or setup. 3rd version not capture by default, capture in web mode. the initial run trigger event on uncheck so need to check if the temp file exist already (we could skip init event but that will lost the log msg of error direction)
+  # the setup is run in beginning, also run with checkbox event. don't run twice if already exist. global switch variable need to detect status.
   ERROR_CAPTURED <- FALSE
   setup_error_capture <- function(){
+    # only run when not already captured, otherwise will cause problem
     if (!ERROR_CAPTURED) {
       # each session have one error log file. different client will have different file in same server
       values$error_file <- tempfile()
@@ -217,20 +236,21 @@ output:
     }
   }
   # the error setup need to run in the beginning. If put inside event observer totally, when app(data) was used, the data start to import immediately when this part not run yet.
-  isolate(setup_error_capture())
-  # isolate({
-  #   values$error_file <- tempfile()
-  #   # the capturing code is not inside observer anymore, but it need to be inside a reactive context (there is no warning?), put it here
-  #   values$error_file_con <- file(values$error_file, open = "a")
-  #   sink(values$error_file_con, type = "message")
-  #   log_msg("Error messages captured in App")
-  # })
-  # # clean up. needed in app exit and checking option off.
+  # DEBUG app(data): when there is error in loading app with parameter, the app can fail and error captured in app so not visible, comment this line off so error can be shown. note browser will open the installed script, so edit need to be written in original source, not the tab opened by browser.
+  # isolate(setup_error_capture())  # comment off when debugging app import
+  # decided to turn it off by default, unless in hosted mode
+  if (!APP_local) {
+    updateCheckboxInput(session, "capture_error", value = TRUE)
+    }
+  # clean up. needed in app exit and checking option off.
   clean_up_error_capture <- function(error_con) {
-    # need to restore sink first, otherwise connection cannot be closed. if don't restore, other message got lost too.
-    sink(type = "message")
-    flush(error_con)
-    close(error_con)
+    # app default to not capture, app start trigger checkbox false mode which try to clean up, but not setup yet
+    if (!is.null(error_con)) {
+      # need to restore sink first, otherwise connection cannot be closed. if don't restore, other message got lost too.
+      sink(type = "message")
+      flush(error_con)
+      close(error_con)
+    }
   }
   # checking on/off option should either prepare the error file or clean it up
   observeEvent(input$capture_error, {
@@ -239,9 +259,11 @@ output:
     } else {
       clean_up_error_capture(values$error_file_con)
       ERROR_CAPTURED <<- FALSE
-      log_msg("Error message directed to R Console")
+      log_msg("Error messages directed to R Console")
     }
-  })
+  }
+  # , ignoreInit = TRUE
+  )
   # clean up ----
   # on.exit need to be inside server function so outside of renderUI
   onStop(function() {
@@ -303,8 +325,7 @@ output:
   par_occur_mem <- memoise::memoise(
     ctmmweb::par_occur,
     cache = memoise::cache_filesystem(cache_path))
-  # p1. import ----
-  # run this after every modification on data and list separately. i.e. values$data$tele_list changes, or data not coming from combine. this should got run automatically? no if not referenced. need reactive expression to refer values$.
+  # a safety check for data intergrity when turned on. will run after every modification on data and list separately. i.e. values$data$tele_list changes, or data not coming from combine. this should got run automatically? no if not referenced. need reactive expression to refer values$.
   # this is a side effect reactive expression that depend on a switch.
   verify_global_data <- reactive({
     if (VERIFY_DATA_SYNC) {
@@ -312,40 +333,22 @@ output:
     }
   })
   # values$ ----
+  # input_tele_list: telemetry obj list from as.telemetry on input data: movebank download, local upload, package data. all reference of this value should wrap req around it. this is put outside data because we often need to clear data while keep data. so data is derived from input, augmented in app. now saved data doesn't include this, but that's a minor point, acceptable, easy to add if needed.
   # data hold various aspects of core data, 4 items need to be synced
   values$data <- NULL
   # important reactive value and expressions need special comments, use <--. the design need to well thought
-  # input_tele_list: telemetry obj list from as.telemetry on input data: movebank download, local upload, package data. all reference of this value should wrap req around it. Once it's used, no need to keep the copy. thus add it with the new time subset. We don't need to keep the dt version because we can often just use existing dt and other info. do need to verify tele and dt is synced.
-  # tele_list, merged: the telemetry version and merged data.table version of updated data reflected changes on outlier removal and time subsetting.
+  # tele_list, merged: the telemetry version and merged data.table version of updated data reflected changes on outlier removal and time subsetting. we want to save input_tele_list because we may want to reset outlier/subsetting and back to original input without importing again.
   # merged hold $data_dt and $info. we used to call $dt but it was renamed because of exported function may have naming conflict with dt. data is a more generic name with more items, data_dt is the main dt.
-  # all_removed_outliers: records of all removed outliers. original - all removed = current. the table have id column so this can work across different individuals.
+  # all_removed_outliers: records of all removed outliers. original - all removed = current. the table have id column so this can work across different individuals. this one is special as data + removed = input.
   # the time subset only live in time subsetting process, the result of the process update tele_list and merged.
   # the extra column of outliers only live in outlier page. the result of the process update whole data. note may need to use column subset when operating between dt with or without extra columns.
   # for any data source changes, need to update these 4 items together.
   # selected_model_try_res is updated in model fitting stage, need to be cleared when input change too.
-  # build id_pal from info. this is needed in importing tele data, and restoring session data.
-  build_id_pal <- function(info) {
-    leaflet::colorFactor(
-      scales::hue_pal()(nrow(info)), info$identity, ordered = TRUE
-    )
-  }
-  update_input_data <- function(tele_list) {
-    values$data$input_tele_list <- tele_list
-    values$data$tele_list <- tele_list
-    values$data$merged <- ctmmweb:::combine_tele_list(tele_list)
-    values$data$all_removed_outliers <- NULL
-    # values$selected_data_model_try_res <- NULL
-    # this need to be built with full data, put as a part of values$data so it can be saved in session saving. if outside data, old data's value could be left to new data when updated in different route.
-    # however saveRDS save this to a 19M rds. have to put it outside of data, rebuild it when loading session. (update input will update it here)
-    values$id_pal <- build_id_pal(values$data$merged$info)
-    shinydashboard::updateTabItems(session, "tabs", "plots")
-    # LOG input data updated
-    log_msg("Input data updated")
-  }
-  # 1.1 import to telemetry ----
-  # call this function for side effect, set values$data
-  # as.telemetry work on both file path and data.frame, so it works on both of uploaded file and downloaded movebank data frame.
-  data_import <- function(as_telemetry_input) {
+  # import to telemetry list ----
+  # this only import parameter and return a tele list, with all error/warning handling. use import_tele_to_app to update app input data (also have other tasks), use safe_import_tele directly in calibration data import as it doesn change app input data
+  # multiple input options: app start with file path(s), data frame, tele list; movebank import data.frame; upload files. in the end all files, data.frame need to go through as.telemetry import for error checking and report here. tele list can use update_input_data directly.
+  # there are multiple messages and error checking in import stage, so this need to work on both files and data.frame (from movebank download, or app start).
+  safe_import_tele <- function(as_telemetry_input) {
     # sometimes there is error: Error in <Anonymous>: unable to find an inherited method for function ‘span’ for signature ‘"shiny.tag"’. added tags$, not sure if it will fix it.
     note_import <- showNotification(
       shiny::span(icon("spinner fa-spin"), "Importing data..."),
@@ -359,12 +362,23 @@ output:
       warning_generated <<- TRUE
     }
     eHandler <- function(e) {
+      # no way to print error message in console?
+      cat(crayon::red("Import Error:\n"))
+      print(e)
+      # simpleError(e)
       showNotification("Error in import, check data again",
                        duration = 7, type = "error")
     }
     tele_list <- tryCatch(
       withCallingHandlers(
-        ctmmweb:::wrap_single_telemetry(ctmm::as.telemetry(as_telemetry_input)),
+        # previously as.telemetry can work on single file or data.frame, but now we need special treatment for importing multiple files, so it need to be separated.
+        # ctmmweb:::wrap_single_telemetry(ctmm::as.telemetry(as_telemetry_input)),
+        if (is.data.frame(as_telemetry_input)) {
+          ctmmweb:::wrap_single_telemetry(
+            ctmm::as.telemetry(as_telemetry_input))
+        } else {
+          ctmmweb:::import_tele_files(as_telemetry_input)
+          },
         warning = wHandler
         ),
       error = eHandler)
@@ -384,42 +398,99 @@ output:
     test_class <- lapply(tele_list, function(x) {"telemetry" %in% class(x)})
     req(all(unlist(test_class)))
     # sort list by identity. only sort list, not info table. that's why we need to sort it again after time subsetting.
-    tele_list <- ctmmweb:::sort_tele_list(tele_list)
-    update_input_data(tele_list)
+    ctmmweb:::sort_tele_list(tele_list)
   }
-  # clicking browse button without changing radio button should also update, this is why we make the function to include all behavior after file upload.
-  # using parameter because launching app with path also use this function
-  import_as_telemetry <- function(as_telemetry_input){
-    data_import(as_telemetry_input)
-    updateRadioButtons(session, "load_option", selected = "upload")
+  # update app input data with tele list, There are quite some maintenences needed, esp some global variables, better go through this for data changes.
+  # when loading with app(data), the proxy neeed to be initialized first before calling the clear action
+  proxy_individuals <- DT::dataTableProxy("individuals")
+  # update input tele list and others. used in importing new data into app (multiple import options)
+  update_input_data <- function(tele_list) {
+    # if data is anonymized, need to simulate first, also set flag
+    if (!("timestamp" %in% names(tele_list[[1]]))) {
+      ANONYMIZED_data <<- TRUE
+      showNotification("Data is anonymized, simulating location and time",
+                       duration = 4, type = "warning")
+      # LOG anonymized data
+      log_msg("Anonymized data, simulated location and time added")
+      tele_list <- ctmm:::pseudonymize(tele_list)
+    } else {
+      ANONYMIZED_data <<- FALSE
+    }
+    values$input_tele_list <- tele_list
+    update_augmented_data(tele_list)
+  }
+  # clear every item in augmented data(everything other than input. include other global values outside data, like id_pal etc). we need to reset state sometimes, and we cannot use NULL or initialize again. This is much better than manually cleaning up as we may add new sub values in different places in app later
+  # TODO delete individual is still manually update for now, but that's tricky
+  reset_augmented <- function(values) {
+    value_list <- reactiveValuesToList(values)
+    # we only need the first level items, clearing them is enough. setting a list to NULL, assigning its subitem later is OK.
+    lapply(names(value_list), function(x) {
+      if (x != "input_tele_list") values[[x]] <- NULL
+      })
+  }
+  # update augmented data with tele_list (or merged dt/info if available). this is to keep augmented data consistent with same source. leave input_tele unchanged so everything can be reset back to input. augmentation on input data, like time/loc subsetting (add subset to data set), outlier removal, calibration. later just call this with input_tele to reset. for import just init input_tele then start
+  # clear values except input, assign tele_list and merged, build id_pal. all_removed_outliers will be removed so cannot restore to original, but this is acceptable. can always load original from input.
+  update_augmented_data <- function(tele_list, merged = NULL) {
+    # clear values for clean state
+    reset_augmented(values)
+    # need to clear existing variables, better collect all values variable in one place. cannot just reset whole values variable, will cause problem
+    values$data$tele_list <- tele_list
+    values$data$merged <- if (is.null(merged)) {
+      ctmmweb:::combine_tele_list(tele_list)
+    } else {
+      merged
+    }
+    # values$data$all_removed_outliers <- NULL
+    # values$pooled_vario_id_list <- NULL
+    # values$selected_data_model_try_res <- NULL
+    # this need to be built with full data, put as a part of values$data so it can be saved in session saving. if outside data, old data's value could be left to new data when updated in different route.
+    # however saveRDS save this to a 19M rds (function saved with its closure?). have to put it outside of values$data, rebuild it when loading session. (update input will update it here)
+    values$id_pal <- ctmmweb:::build_id_pal(values$data$merged$info)
+    # clear previous selection
+    DT::selectRows(proxy_individuals, list())
+    shinydashboard::updateTabItems(session, "tabs", "plots")
+    # LOG data updated
+    log_msg("Data updated")
+  }
+  # import tele input to app input data. the use case will log accordingly
+  import_tele_to_app <- function(as_telemetry_input) {
+    update_input_data(safe_import_tele(as_telemetry_input))
+    # importing should always move to visualization page.
     shinydashboard::updateTabItems(session, "tabs", "plots")
   }
-  # app(shiny_app_data) ----
+  # 0 app(shiny_app_data) ----
+  ## need to put this after import code as it will call import functions.
+  ## APP_wd: app loading directory could be package installation folder, or server.R folder depend on loading method.
   # app can be launched from rstudio on server.R directly(i.e. runshinydir for app folder, used to be the run.R method), or from package function app(). Need to detect launch mode first, then detect app() parameters if in app mode. By checking environment strictly, same name object in global env should not interfer with app.
   # if app started from starting server.R, current env 2 level parent is global, because 1 level parent is server function env. this is using parent.env which operating on env. parent.frame operating on function call stack, which could be very deep, sys.nframe() reported 37 in browser call, sys.calls give details, the complex shiny maintaince stack.
   # run() function env if called from ctmmweb::app(), one level down from global if run server.R in Rstudio
   calling_env <- parent.env(environment())
-  # app() mode: if not from global
+  # app launched from app()
   if (!identical(parent.env(calling_env), globalenv())) {
     # cat("running in app() mode\n")
-    #set app directory to installed package app folder (from app()), which is needed by loading help documentations
+    # redirect error to R console in app() mode, otherwise if there is error in data loading, the app will crash and error log not shown in console. Since the console is definitely available in this mode, it's OK to use that as default. /this is by default now
+    # updateCheckboxInput(session, "capture_error", value = FALSE)
+    # set app directory to installed package app folder (from app()), which is needed by loading help documentations
     APP_wd <- get("app_DIR", envir = calling_env)
     # further check if data parameter is available. either a string refer to a file can be imported by as.telemetry, or a tele ojb/list can be taken directly.
-    if (exists("shiny_app_data", where = calling_env)) {
+    # input exist and not NULL, need to import data. otherwise just go ahead without data
+    if (exists("shiny_app_data", where = calling_env) &&
+        !is.null(get("shiny_app_data", envir = calling_env))) {
       app_input_data <- get("shiny_app_data", envir = calling_env)
-      # all input can be taken by as.telemetry, except tele obj/list already.
+      # all input can be taken by as.telemetry, except tele obj/list already. this is for when input is tele obj/list
       if (("telemetry" %in% class(app_input_data)) ||
           (is.list(app_input_data) &&
            "telemetry" %in% class(app_input_data[[1]]))) {
         # tele obj/list already, update directly
         # LOG data loaded from app()
-        log_msg("Loading telemetry data from app(shiny_app_data)")
+        log_msg("Loading telemetry data directly to app")
         isolate(update_input_data(app_input_data))
       } else {
+        # when the input need to be imported
         # LOG import telemetry data, it could be an object so cannot put in log_msg 2nd parameter. cannot know original parameter string once transferred as app() parameter.
         log_msg("Importing telemetry data from app(shiny_app_data)")
         # accessed reactive values so need to isolate
-        isolate(import_as_telemetry(app_input_data))
+        isolate(import_tele_to_app(app_input_data))
       }
     }
   } else {
@@ -427,21 +498,47 @@ output:
     # cat("running in runShinydir mode\n")
     APP_wd <- "."
   }
-  # upload dialog
+  # load sliders module, as APP_wd is needed. it's dynamic code in server side, so no need to load in global
+  # source(file.path(APP_wd, "module_server_code.R"))
+  # p1. import ----
+  # 1.1.a import dialog ----
+  # only some data are in movebank format (other only have x,y,t, without timestamp and coordinates, app will not work)
+  ctmm_dataset_info_dt <- data.table(data(package = "ctmm")[["results"]])[
+    , .(Dataset = Item, Description = Title)
+    ]
+  # [Dataset %in% c("buffalo", "coati")]
+  output$data_set_table <- DT::renderDT({
+    DT::datatable(ctmm_dataset_info_dt, options = list(dom = 't'),
+                  rownames = FALSE, selection = list(mode = "single",
+                                                     selected = 1,
+                                                     target = 'row'))
+  })
+  # ctmm internal data ----
+  observeEvent(input$load_ctmm_data, {
+    req(input$data_set_table_rows_selected)
+    data_set_name <- ctmm_dataset_info_dt[input$data_set_table_rows_selected,
+                                          Dataset]
+    # load to current evaluation environment. use list parameter because the first parameter require literal instead of variable
+    data(list = data_set_name, package = "ctmm", envir = environment())
+    data_set <- get(data_set_name, envir = environment())
+    if (input$take_sample) {
+      data_set <- ctmmweb:::pick_tele_list(data_set, req(input$sample_size))
+      # LOG sample data used
+      log_msg("Using sample from ctmm data", data_set_name)
+    } else {
+      # LOG data used
+      log_msg("Using ctmm data", data_set_name)
+    }
+    # dataset is telemetry obj list, so update directly, no need to import
+    update_input_data(data_set)
+  })
+  # upload movebank format file --
   observeEvent(input$tele_file, {
     req(input$tele_file)
-    # LOG file upload.
+    # LOG file upload. need to be outside of import_tele_to_app function because that only have the temp file path, not original file name. thus always call import_tele function with separate log msg line.
     log_msg("Importing file", input$tele_file$name)
     import_as_telemetry(input$tele_file$datapath)
   })
-  # abstract because need to do this in 2 places
-  set_sample_data <- function() {
-    data("buffalo", package = "ctmm", envir = environment())
-    sample_data <- ctmmweb:::pick_tele_list(buffalo, input$sample_size)
-    # LOG use sample
-    log_msg("Using data", "buffalo sample from ctmm")
-    update_input_data(sample_data)
-  }
   # observe radio button changes
   observeEvent(input$load_option, {
     switch(input$load_option,
@@ -571,6 +668,7 @@ output:
     values$study_preview <- NULL
     values$move_bank_dt <- NULL
   }
+  # login, download studies ----
   observeEvent(input$login, {
     note_studies <- showNotification(
       shiny::span(icon("spinner fa-spin"), "Downloading studies..."),
@@ -593,11 +691,14 @@ output:
                            "number_of_deployments", "number_of_events",
                            "number_of_individuals",
                            "i_am_owner", "i_can_see_data", "license_terms")
-      all_studies <- try(fread(res$res_cont, select = studies_cols))
+      all_studies <- try(fread(res$res_cont, select = studies_cols,
+                               colClasses =
+              list(logical = c("i_am_owner", "i_can_see_data"))))
+      # fread now read true/false as logical, so no need for conversion below. specify colClass to avoid future error of type changes. previously did some missing rows bumped the column type to character?
       # using ifelse because we need vectorized conversion here.
-      all_studies[, i_can_see_data :=
-                    ifelse(i_can_see_data == "true", TRUE, FALSE)]
-      all_studies[, i_am_owner := ifelse(i_am_owner == "true", TRUE, FALSE)]
+      # all_studies[, i_can_see_data :=
+      #               ifelse(i_can_see_data == "true", TRUE, FALSE)]
+      # all_studies[, i_am_owner := ifelse(i_am_owner == "true", TRUE, FALSE)]
       valid_studies <- all_studies[(i_can_see_data)]
       new_names <- sub(".*_", "", studies_cols)
       setnames(valid_studies, studies_cols, new_names)
@@ -639,7 +740,7 @@ output:
       # It's easier to specify cols here to drop some cols and reorder cols at the same time
       detail_cols <- c("id", "name", "study_objective", "study_type", "license_terms", "principal_investigator_name", "principal_investigator_address", "principal_investigator_email", "timestamp_start", "timestamp_end", "bounding_box", "location_description", "main_location_lat", "main_location_long", "number_of_tags", "acknowledgements", "citation", "comments", "grants_used", "there_are_data_which_i_cannot_see")
       detail_dt <- try(fread(res$res_cont, select = detail_cols))
-      req("data.table" %in% class(detail_dt))
+      req(is.data.table(detail_dt))
       # need to check content in case something wrong and code below generate error on empty table
       # never had error here because the mb_id came from table itself. so no extra clear up boxes
       if (detail_dt[, .N] == 0) {
@@ -703,7 +804,7 @@ output:
       log_msg("Movebank data downloaded", mb_id())
       # some detail table may have invalid characters that crash kable. disable this now.
       # log_dt_md(values$study_detail, "Downloaded study details",
-      #           on = option_selected("record_on"))
+      #           on = input_value("record_on"))
     }
   })
   callModule(click_help, "download_movebank", title = "Download Movebank data",
@@ -721,41 +822,67 @@ output:
         },
     content = function(file) {
       req(values$move_bank_dt[, .N] > 0)
-      fwrite(values$move_bank_dt, file)
+      fwrite(values$move_bank_dt, file, dateTimeAs = "write.csv")
       # LOG save movebank data. we don't know what's the final file name. file is temp file path
       log_msg("Movebank data saved", mb_id())
     }
   )
   observeEvent(input$import_movebank, {
     req(values$move_bank_dt[, .N] > 0)
-    data_import(values$move_bank_dt)
+    # data frame need to go through telemetry import process
+    import_tele_to_app(values$move_bank_dt)
     # LOG import movebank data
     log_msg("Movebank data imported", mb_id())
     shinydashboard::updateTabItems(session, "tabs", "plots")
   })
   # p2. plots ----
+  callModule(click_help, "visual", title = "Visualization",
+             size = "l", file = "help/2_visualization.md")
+  callModule(click_help, "device_error", title = "Device Error",
+             size = "l", file = "help/2_device_error.md")
   # input (upload, movebank, buffalo) -> current -> chose animal in table
   # current: merge telemetry to df, remove outliers if in quene, return df, info table, removed outliers full data
   # 2.1 data summary ----
   output$outlier_report <- renderUI({
     if (!is.null(values$data$all_removed_outliers)) {
-      h4(style = "color: #F44336;font-weight: bold;text-decoration: underline;",
+      h4(style = "color: #F44336;border: 2px solid;border-radius: 5px;padding-left: 5px;padding-right: 5px;",
          paste0(nrow(values$data$all_removed_outliers),
              " outliers removed from original"))
     }
   })
+  # PAGE_LENGTH ----
+  # save last page length and use it when table refreshes across session. In one session user may have a preference, and keep it unless changed by user is fine. We want to save last non-zero page length (it will become zero in table refresh). in init we need to either use this or initial value if it's not ready yet.
+  # it need to be triggered by page length change, not page refresh. if watching table rows, it will become null when refreshing, and stop the reactive expression when we need it.
+  # with state_save, we have these variables. and by default observer ignoreNull
+  individuals_PAGE_LENGTH <- 6  # to hint this is a global variable.
+  # with an internal global variable and observe ignoreNULL, we saved the value and ignored table refresh. with initial value of global variable, it can work in beginning.
+  observeEvent(input$individuals_state$length, {
+    individuals_PAGE_LENGTH <<- input$individuals_state$length
+  })
   output$individuals <- DT::renderDT({
     req(values$data)
+    # prevent select_data to run before this finished with updated data.
+    freezeReactiveValue(input, "individuals_rows_current")
     info_p <- values$data$merged$info
-    DT::datatable(info_p, options = list(pageLength = 6,
-                                     lengthMenu = c(2, 4, 6, 8, 10, 20))) %>%
+    # stateSave save whole table state in html5 local storage, so it's across session unless restart R. setting stateDuration to session storage
+    DT::datatable(info_p,
+                  options = list(
+                    stateSave = TRUE, stateDuration = -1,
+                    columnDefs = list(list(className = 'dt-center',
+                                           targets = "_all")),
+                    scrollX = TRUE,
+                    pageLength = individuals_PAGE_LENGTH,
+                    lengthMenu = c(2, 4, 6, 8, 10, 20)),
+                  rownames = FALSE) %>%
       DT::formatStyle('identity', target = 'row',
-                  color = DT::styleEqual(info_p$identity,
-                                     scales::hue_pal()(nrow(info_p)))
-      )
+                      color = DT::styleEqual(info_p$identity,
+                                             scales::hue_pal()(nrow(info_p)))
+      ) %>%
+      DT::formatStyle('calibrated', color = DT::styleEqual(c("yes", "no"),
+                                                           c('green', 'red')))
   })
-  # delete selected individuals ----
-  # update tele_list, merged data and info, all removed outliers
+  # delete individuals ----
+  # update tele_list, merged data and info.note all removed outliers will reset so cannot undo outlier removal.
   observeEvent(input$delete_individuals, {
     req(values$data)
     req(input$individuals_rows_current)
@@ -769,27 +896,27 @@ output:
                          duration = 3, type = "error")
         return()
       }
-      # begin removal. freeze plots to avoid it update before data finish sync. we cannot freeze output, but the key factor is the selected rows which will reset after table updated, which could be slower than data updates. so we freeze the row selection which will also freeze select_data. This row selection is often slower than data update, same in remove outlier
-      # tried freeze overlap table rows here to solve the double update problem of home range plot, not working.
-      # freezeReactiveValue(input, "individuals_rows_selected")
-      if (!is.null(values$data$all_removed_outliers)) {
-        values$data$all_removed_outliers <- values$data$all_removed_outliers[
-          !(identity %in% chosen_ids)
-          ]
-      }
-      values$data$merged$data_dt <- values$data$merged$data_dt[
-        !(identity %in% chosen_ids)
-      ]
-      remaining_indice <- !(values$data$merged$info$identity %in% chosen_ids)
-      values$data$merged$info <- values$data$merged$info[remaining_indice]
-      values$data$tele_list <- values$data$tele_list[remaining_indice]
-      verify_global_data()
+      # if (!is.null(values$data$all_removed_outliers)) {
+      #   values$data$all_removed_outliers <- values$data$all_removed_outliers[
+      #     !(identity %in% chosen_ids)
+      #     ]
+      # }
+      all_dt <- values$data$merged$data_dt[ !(identity %in% chosen_ids)]
+      all_dt[, id := factor(identity)]
+      all_dt[, row_no := .I]
+      remaining_id_indice <- !(values$data$merged$info$identity %in% chosen_ids)
+      all_info <- values$data$merged$info[remaining_id_indice]
+      all_tele_list <- values$data$tele_list[remaining_id_indice]
+      update_augmented_data(all_tele_list,
+                            list(data_dt = all_dt, info = all_info))
+      # values$id_pal <- ctmmweb:::build_id_pal(values$data$merged$info)
+      # verify_global_data()
       # LOG delete inidividuals
       log_msg("Individuals deleted from data ",
               stringr::str_c(chosen_ids, collapse = ", "))
     }
   })
-  proxy_individuals <- DT::dataTableProxy("individuals")
+
   observeEvent(input$select_all, {
     # this always select all rows
     # DT::selectRows(proxy_individuals, 1:nrow(values$data$merged$info))
@@ -800,18 +927,16 @@ output:
     # use list() instead of NULL to avoid R 3.4 warning on I(NULL). After DT fixed this warning we can change back to NULL
     DT::selectRows(proxy_individuals, list())
   })
-  callModule(click_help, "visual", title = "Visualization",
-             size = "l", file = "help/2_visualization.md")
   # select_data() ----
   # selected rows or current page, all pages start from this current subset
   # with lots of animals, the color gradient could be subtle or have duplicates
   select_data <- reactive({
     # need to wait the individual summary table initialization finish. otherwise the varible will be NULl and data will be an empty data.table but not NULL, sampling time histogram will have empty data input.
     req(values$data)
-    # switching data summary units cause redraw of plot, because the table redraw changed the rows_current value to null then new, triggered this change.
     req(input$individuals_rows_current)
     id_vec <- values$data$merged$info[, identity]
     # table can be sorted, but always return row number in column 1
+    # select two rows, update input data with 2 rows, the rows_selected updated, but rows_current is still 6, so chosen_row_nos have 6 applied to 2 rows. freeze rows_current in data summary table, for freeze it's all about right timing. update_input updated everything, data summary table and select_data both began to update but DT table is always slower to finish, so freeze the value there, prevent select_data to run first.
     if (length(input$individuals_rows_selected) == 0) {
       # select all in current page when there is no selection
       chosen_row_nos <- input$individuals_rows_current
@@ -821,9 +946,11 @@ output:
     chosen_ids <- id_vec[chosen_row_nos]
     # %in% didn't keep order. since our table update in sort change the data and redraw anyway, let's keep the order. the other similar usage is in removing outliers. should not have problem with new orders.
     # animals_dt <- values$data$merged$data_dt[identity %in% chosen_ids]
-    animals_dt <- values$data$merged$data_dt[.(chosen_ids), on = "id"]
-    # also need to change the order of levels of dt, so that ggplot will plot them in same order. all these are based on selected subset, should not modify original data
-    animals_dt$id <- factor(animals_dt$id, levels = chosen_ids)
+    # the subset id factor should keep the whole id vector in levels, which is needed for color mapping
+    animals_dt <- values$data$merged$data_dt[.(chosen_ids), on = "identity"]
+    # ~also need to change the order of levels of dt, so that ggplot will plot them in same order. all these are based on selected subset, should not modify original data~ this will remove whole level information. remove this.
+    # used to try to make individual plot order same with row click order(like the variogram page and overlap), but that need to override factor levels, which is difficult when we need to keep whole level and change subset order. we can order individual plot in same order if only name are used(individual group plot), but not when factor is used(facet).
+    # animals_dt$id <- factor(animals_dt$id, levels = chosen_ids)
     # subset_indice <- values$data$merged$info$identity %in% chosen_ids
     # info only has identity, no id column
     info <- values$data$merged$info[.(chosen_ids), on = "identity"]
@@ -831,9 +958,13 @@ output:
     # values$selected_data_model_try_res <- NULL
     DT::selectRows(proxy_model_dt, list())
     updateRadioButtons(session, "vario_mode", selected = "empirical")
-    updateSelectInput(session, "vario_dt_ids", choices = info$identity)
+    updateSelectInput(session, "vario_intervals_ids", choices = info$identity)
     updateSelectInput(session, "pool_vario_ids", choices = info$identity)
     values$multi_schedule_dt <- NULL
+    # init k as 2, use slider to modify selectively
+    values$kmeans_control_dt <- data.table(identity =
+                                             unique(animals_dt$identity),
+                                           k = 2)
     values$pooled_vario_dt <- NULL
     # LOG current selected individuals
     log_dt_md(info, "Current selected individuals")
@@ -843,9 +974,24 @@ output:
     return(list(data_dt = animals_dt,
                 info = info,
                 chosen_row_nos = chosen_row_nos,
+                chosen_ids = chosen_ids,
                 tele_list = values$data$tele_list[chosen_ids]
                 ))
   })
+  # export current ----
+  output$export_rows <- downloadHandler(
+    filename = function() {
+      paste0("Exported_", ctmmweb:::current_timestamp(), ".csv")
+    },
+    content = function(file) {
+      # LOG export current
+      log_dt_md(select_data()$info, "Export current data")
+      export_current_path <- file.path(session_tmpdir, "export.csv")
+      fwrite(select_data()$data_dt, file = export_current_path,
+             dateTimeAs = "write.csv")
+      file.copy(export_current_path, file)
+    }
+  )
   # 2.2 overview plot ----
   # to add zoom in for a non-arranged plot, seem more in add_zoom.R and google group discussion
   # 1. add event id in ui, always use same naming pattern with plotid.
@@ -881,6 +1027,64 @@ output:
     log_save_ggplot(g, "plot_2_overview")
   }, height = function() { input$canvas_height }, width = "auto"
   )
+  # for cropped location subset, crop from tele obj, thus generate dt from it
+  # for time subset, generate new_dt, then subset tele obj. both only apply to single animal, thus function take tele_obj instead of tele_list
+  # we can just importing everything again after tele change, but this will save a lot of computations (need more maintenance though)
+  add_new_data_set <- function(new_id, new_tele, new_dt = NULL) {
+    new_tele@info$identity <- new_id
+    # need item name, and in list for most operations. and c work with list and list, not list with item.
+    new_tele_list <- ctmmweb:::wrap_single_telemetry(new_tele)
+    # add to input tele_list, import new tele and add to dt. no need to import whole dataset, but do need to sort and update info
+    all_tele_list <- ctmmweb:::sort_tele_list(
+      c(values$data$tele_list, new_tele_list)
+    )
+    # info better take all since unit formating may change, and it's not computation intensive.
+    all_info <- ctmmweb:::info_tele_list(all_tele_list)
+    # only convert new data for dt
+    if (is.null(new_dt)) { new_dt <- ctmmweb:::tele_list_to_dt(new_tele_list) }
+    all_dt <- rbindlist(list(values$data$merged$data_dt, new_dt))
+    # ggplot sort id by name, to keep it consistent we also sort the info table. for data.table there is no need to change order (?), this can keep row_no mostly same. these maintenances are needed for any individual changes in dt.
+    all_dt[, id := factor(identity)]
+    all_dt[, row_no := .I]
+    update_augmented_data(all_tele_list,
+                          list(data_dt = all_dt, info = all_info))
+    # LOG subset added
+    log_msg("New Dataset Added", new_id)
+    msg <- paste0(new_id, " added to data")
+    showNotification(msg, duration = 2, type = "message")
+  }
+  # 2.2.1 crop subset ----
+  # generate next name from _subset_i or _crop_i
+  next_data_set_name <- function(all_names, base_name, pattern_string){
+    matches <- stringr::str_match(all_names,
+                                  paste0(base_name, pattern_string,
+                                         "(\\d+)$"))
+    matches[is.na(matches)] <- 0
+    last_index <- max(as.numeric(matches[,2]))
+    new_suffix <- paste0(pattern_string, last_index + 1)
+    new_id <- paste0(base_name, new_suffix)
+  }
+  # similar to time subsetting
+  observeEvent(input$crop_loc_subset, {
+    if (length(input$individuals_rows_selected) != 1) {
+      showNotification(
+        "Please select single individual first before cropping",
+        type = "error", duration = 6)
+    } else {
+      brush <- input$location_plot_gg_brush
+      if (!is.null(brush)) {
+        # current data tele obj
+        tele <- select_data()$tele_list[[1]]
+        # subset by range
+        new_tele <- tele[tele$x >= brush$xmin & tele$x <= brush$xmax &
+                         tele$y >= brush$ymin & tele$y <= brush$ymax, ]
+        # set name. we have to scan all names because there could be previous crops generated from same individual
+        new_id <- next_data_set_name(values$data$merged$info$identity,
+                                     new_tele@info$identity, "_crop_")
+        add_new_data_set(new_id, new_tele)
+      }
+    }
+  })
   # 2.3 facet ----
   output$location_plot_facet_fixed <- renderPlot({
     # by convention animals_dt mean the data frame, sometimes still need some other items from list, use full expression
@@ -925,7 +1129,53 @@ output:
     # LOG save pic
     log_save_ggplot(gr, "plot_4_individual")
   }, height = function() { input$canvas_height }, width = "auto")
-  # 2.5 histogram facet ----
+  # 2.5 device errors ----
+  output$error_plot <- renderPlot({
+    tele_list <- req(select_data()$tele_list)
+    ctmm::plot(tele_list,
+               col = values$id_pal(select_data()$info$identity),
+               error = as.numeric(input$error_plot_mode))
+  })
+  # load calibration data ----
+  # just import, save tele_list to values. not uere yet. because we cannot save to values$cali_uere yet before checking manual input
+  observeEvent(input$cali_file, {
+    req(input$cali_file)
+    # LOG file upload.
+    log_msg("Loading calibration data", input$cali_file$name)
+    values$cali_tele_list <- safe_import_tele(input$cali_file$datapath)
+    # values$cali_uere <- ctmm::uere(values$cali_tele_list)
+    # uere_value <- ctmm::uere(values$cali_tele_list)
+    # updateTextInput(session, "uere_text_input",
+    #                 value = as.character(round(uere_value, 3)))
+  })
+  # print uere of calibration data. just calculate on the fly
+  output$uere_print <- renderPrint({
+    ctmm::uere.fit(req(values$cali_tele_list))
+  })
+  # apply current uere value ----
+  observeEvent(input$apply_uere, {
+    # we need to modify the values variable, not the select_data copy
+    # each item get updated, but uere on list return NULL. is calibrated also didn't return true after update.
+    # if input box has content, use input box. otherwise use loaded calibration data.
+    if (input$uere_text_input == "") {
+      values$cali_uere <- ctmm::uere.fit(req(values$cali_tele_list))
+    } else {
+      # uere is always a named vector. after parsing the name is lost, need to restore it, otherwise new uere was not named properly
+      # values$cali_uere <- c(horizontal = req(ctmmweb:::parse_num_text_input(
+      #   input$uere_text_input)))
+      values$cali_uere <- req(ctmmweb:::parse_num_text_input(
+        input$uere_text_input))
+    }
+    # uere_by_input <- c(horizontal = req(ctmmweb:::parse_num_text_input(
+    #   input$uere_text_input)))
+    ctmm::uere(values$data$tele_list[select_data()$chosen_ids]) <-
+      values$cali_uere
+    # need to update data with tele input changed
+    update_input_data(values$data$tele_list)
+    # restore previous selection after data/table update. no selection means no selection too, also what we want.
+    DT::selectRows(proxy_individuals, input$individuals_rows_selected)
+  })
+  # 2.6 histogram facet ----
   output$histogram_facet <- renderPlot({
     animals_dt <- req(select_data()$data_dt)
     g <- ctmmweb::plot_time(animals_dt)
@@ -933,8 +1183,6 @@ output:
     log_save_ggplot(g, "plot_5_histogram")
   }, height = ctmmweb:::STYLES$height_hist, width = "auto")
   # p3. outlier ----
-  callModule(click_help, "telemetry_errors", title = "Telemetry Errors",
-             size = "l", file = "help/3_telemetry_errors.md")
   callModule(click_help, "outlier_distance",
              title = "Outliers in Distance to Median Center",
              size = "l", file = "help/3_outlier_distance.md")
@@ -944,15 +1192,13 @@ output:
   # take current subset, add distance and speed columns. everything in this page start from this data. The outlier removal need to apply to whole data then trickle down here
   calc_outlier <- reactive({
     # exclude non-numeric input
-    req(!is.na(as.numeric(input$device_error)))
+    # req(!is.na(as.numeric(input$device_error)))
     outlier_page_data <- req(select_data())  # data, info, tele_list
     animals_dt <- outlier_page_data$data_dt
-    # need telemetry list for error info
+    # need telemetry list for error info. if data is calibrated, the error slot is take as logical thus not interfering. if not calibrated, the 10 is a good default value. see comments around https://github.com/ctmm-initiative/ctmmweb/issues/49#issuecomment-396723237
     animals_dt <- animals_dt %>%
-      ctmmweb::assign_distance(outlier_page_data$tele_list,
-                               as.numeric(input$device_error)) %>%
-      ctmmweb::assign_speed(outlier_page_data$tele_list,
-                            as.numeric(input$device_error))
+      ctmmweb::assign_distance(outlier_page_data$tele_list, 10) %>%
+      ctmmweb::assign_speed(outlier_page_data$tele_list, 10)
     outlier_page_data$data_dt <- animals_dt
     return(outlier_page_data)
   })
@@ -997,7 +1243,7 @@ output:
   # need the whole range to get proper unit selection
   format_outliers <- function(animal_selected_data, animals_dt) {
     unit_distance <- ctmmweb:::pick_unit_distance(animals_dt$distance_center)
-    unit_speed <- ctmmweb:::pick_unit_speed(animals_dt$speed)
+    unit_speed <- ctmmweb:::pick_unit_speed(animals_dt$assigned_speed)
     # get this first otherwise the colname is changed
     dt <- animal_selected_data[, .(id, row_no,
        timestamp = ctmmweb:::format_datetime(timestamp),
@@ -1006,11 +1252,11 @@ output:
        #                          digits = 3),
        # distance_unit = unit_distance$name,
        # speed = format(speed / unit_speed$scale, digits = 3),
-       speed = speed
+       assigned_speed = assigned_speed
        # speed_unit = unit_speed$name
        )]
     name_unit_list <- list("distance_center" = ctmmweb:::pick_unit_distance,
-                           "speed" = ctmmweb:::pick_unit_speed)
+                           "assigned_speed" = ctmmweb:::pick_unit_speed)
     ctmmweb:::format_dt_unit(dt, name_unit_list)
   }
   # brush selection function
@@ -1026,7 +1272,7 @@ output:
                animals_dt <- req(bin_by_distance()$animals_dt)
              },
              speed = {
-               col_name = quote(speed)
+               col_name = quote(assigned_speed)
                format_f <- ctmmweb:::format_speed_f
                # unit_name <- " m/s"
                animals_dt <- req(bin_by_speed()$animals_dt)
@@ -1069,7 +1315,6 @@ output:
   output$distance_outlier_plot <- renderPlot({
     animals_dt <- req(bin_by_distance()$animals_dt)
     animal_selected_data <- select_distance_range()$animal_selected_data
-    # browser()
     g <- ggplot2::ggplot(animals_dt, ggplot2::aes(x, y)) +
       ggplot2::geom_point(size = 0.05, alpha = 0.6, colour = "gray") +
       ggplot2::geom_point(data = animal_selected_data,
@@ -1125,9 +1370,11 @@ output:
     # removed_points <- values$data$merged$data_dt[
     #   row_name %in% row_names_to_remove]
     # distance and speed color_break will add each own factor column, so two tab have different columns. we only need the extra columns minus these factor column in summary table
-    points_to_remove <- points_to_remove[, timestamp:speed]
+    # with coati data, the speed column is in earlier position, so do not make subsets now
+    # points_to_remove <- points_to_remove[, timestamp:speed]
+    # color factor columns added by distance or speed. the dt came from page data which has the factor columns even our factor function didn't modify input parameter. use fill here, alternatively we can remove color columns
     values$data$all_removed_outliers <- rbindlist(list(
-      values$data$all_removed_outliers, points_to_remove))
+      values$data$all_removed_outliers, points_to_remove), fill = TRUE)
     animals_dt <- values$data$merged$data_dt[
       !(row_name %in% values$data$all_removed_outliers[, row_name])]
     # update tele obj. more general apporach is update them according to data frame changes.
@@ -1173,29 +1420,29 @@ output:
     # animals_dt <- req(select_data()$data_dt)
     animals_dt <- req(calc_outlier()$data_dt)
     # too large UERE value will result calculated speed in 0
-    zero_speeds <- all(range(animals_dt$speed) == c(0,0))
+    zero_speeds <- all(range(animals_dt$assigned_speed) == c(0,0))
     if (zero_speeds) {
       showNotification("Calculated Speed = 0, is device error too big?",
                        type = "error")
     }
     req(!zero_speeds)
     return(ctmmweb:::color_break(input$speed_his_bins, animals_dt,
-                       "speed", ctmmweb:::format_speed_f))
+                       "assigned_speed", ctmmweb:::format_speed_f))
   })
   output$speed_histogram <- renderPlot({
     speed_binned <- req(bin_by_speed())
     animals_dt <- speed_binned$animals_dt
     # cat("dataset in speed page\n")
     # print(animals_dt[, .N, by = id])
-    g <- ggplot2::ggplot(animals_dt, ggplot2::aes(x = speed)) +
+    g <- ggplot2::ggplot(animals_dt, ggplot2::aes(x = assigned_speed)) +
       ggplot2::geom_histogram(breaks = speed_binned$color_bin_breaks,
-                              ggplot2::aes(fill = speed_color_factor,
-                         alpha = speed_color_factor)) +
+                              ggplot2::aes(fill = assigned_speed_color_factor,
+                         alpha = assigned_speed_color_factor)) +
       # need to exclude 0 count groups
       ggplot2::geom_text(stat = 'bin', ggplot2::aes(label = ifelse(..count.. != 0, ..count.., "")),
                 vjust = -1, breaks = speed_binned$color_bin_breaks) +
-      ctmmweb:::factor_fill(animals_dt$speed_color_factor) +
-      ctmmweb:::factor_alpha(animals_dt$speed_color_factor) +
+      ctmmweb:::factor_fill(animals_dt$assigned_speed_color_factor) +
+      ctmmweb:::factor_alpha(animals_dt$assigned_speed_color_factor) +
       ggplot2::scale_x_continuous(breaks = speed_binned$non_empty_breaks,
                          labels = speed_binned$vec_formatter) +
       ggplot2::coord_cartesian(ylim = c(0, input$speed_his_y_limit)) +
@@ -1222,11 +1469,11 @@ output:
                  # alpha = ifelse(is.null(input$speed_his_brush),
                  #                0.6,
                  #                input$speed_alpha),
-                 ggplot2::aes(colour = speed_color_factor,
-                     alpha = speed_color_factor)) +
-      ctmmweb:::factor_color(animal_selected_data$speed_color_factor) +
+                 ggplot2::aes(colour = assigned_speed_color_factor,
+                     alpha = assigned_speed_color_factor)) +
+      ctmmweb:::factor_color(animal_selected_data$assigned_speed_color_factor) +
       # scale_alpha_discrete(breaks = bin_by_speed()$color_bin_breaks) +
-      ctmmweb:::factor_alpha(animal_selected_data$speed_color_factor) +
+      ctmmweb:::factor_alpha(animal_selected_data$assigned_speed_color_factor) +
       ggplot2::scale_x_continuous(labels = ctmmweb:::format_distance_f(animals_dt$x)) +
       ggplot2::scale_y_continuous(labels = ctmmweb:::format_distance_f(animals_dt$y)) +
       ggplot2::coord_fixed(xlim = speed_outlier_plot_range$x,
@@ -1243,7 +1490,6 @@ output:
       # cat("selected points in table\n")
       # print(selected_points)
       # draw rectangle around selected points
-      # browser()
       g <- g +
         ggplot2::geom_point(data = selected_points, size = 3.5, alpha = 1,
                                    color = "blue", shape = 22)
@@ -1341,14 +1587,16 @@ output:
   })
   # tried to add delete rows like the time range table, but that need to update a lot of values in proper order, the reset is easy because it just use original input. Not really need this complex operations.
   # reset outlier removal ----
+  # there are multiple possible modifications to input data now: outlier, time/loc subset, calibration. The easiest way is to keep only one version, every reset back to input. too complex to keep the in-between version. user need to save the data in between.
   # method 1. merge data back, just reverse the remove outlier. that require add rows to tele which is not possible now? need that tele update function later. if this is doable, pros: merge dt is faster than combine; time-subset don't need to update input tele, only need to maintain current tele/dt.
   # method 2. merge input. but time subset added new data. if we update input_tele with time subset, need to use the original input tele + new time subset, not the current tele which could have outlier removed. by merging tele we didn't keep two versions. but this could be expensive in merging.
   observeEvent(input$reset_outliers, {
-    values$data$tele_list <- values$data$input_tele_list
-    values$data$merged <- ctmmweb:::combine_tele_list(values$data$tele_list)
-    values$data$all_removed_outliers <- NULL
-    # LOG reset removal
-    log_msg("All Removed Outliers Restored")
+    update_augmented_data(values$input_tele_list)
+    # values$data$tele_list <- values$data$input_tele_list
+    # values$data$merged <- ctmmweb:::combine_tele_list(values$data$tele_list)
+    # values$data$all_removed_outliers <- NULL
+    # LOG restore to original
+    log_msg("Restored to original input data")
   })
   # p4. time subset ----
   callModule(click_help, "time_subsetting", title = "Subset data by time",
@@ -1391,7 +1639,7 @@ output:
   output$histogram_subsetting <- renderPlot({
     animal_binned <- color_bin_animal()
     g <- ggplot2::ggplot(data = animal_binned$data_dt, ggplot2::aes(x = timestamp)) +
-      ggplot2::geom_histogram(breaks = as.numeric(animal_binned$color_bin_breaks),
+      ggplot2::geom_histogram(breaks = animal_binned$color_bin_breaks,
                      fill = scales::hue_pal()(input$time_color_bins)) +
       ggplot2::scale_x_datetime(breaks = animal_binned$color_bin_breaks,
                        labels = scales::date_format("%Y-%m-%d %H:%M:%S")) +
@@ -1488,7 +1736,7 @@ output:
       }
     }
   })
-  observeEvent(input$reset_time_sub, {
+  observeEvent(input$clear_all_time_sub, {
     values$time_ranges <- NULL
     # LOG clear
     log_msg("Time Range List Cleared")
@@ -1521,36 +1769,38 @@ output:
     # subset tele by row_name before it changes
     # new_tele <- new_tele[(row.names(new_tele) %in% new_dt[, row_name]),]
     new_tele <- new_tele[new_dt$row_name,]
-    new_tele@info$identity <- new_id
+    # new_tele@info$identity <- new_id
+    add_new_data_set(new_id, new_tele, new_dt)
     # update other columns
-    new_dt[, row_name := paste0(row_name, new_suffix)]
-    # update the row name in tele data frame by new row_name column
-    row.names(new_tele) <- new_dt$row_name
-    # update data
-    all_dt <- values$data$merged$data_dt
-    all_dt <- rbindlist(list(all_dt, new_dt))
-    # ggplot sort id by name, to keep it consistent we also sort the info table. for data.table there is no need to change order (?), this can keep row_no mostly same
-    all_dt[, id := factor(identity)]
-    all_dt[, row_no := .I]
-    values$data$merged$data_dt <- all_dt
-    # need to wrap single obj otherwise it was flattened by c
-    values$data$tele_list <- c(values$data$tele_list,
-                               ctmmweb:::wrap_single_telemetry(new_tele))
-    # also update input tele from original input + new tele
-    values$data$input_tele_list <- c(values$data$input_tele_list,
-                                     ctmmweb:::wrap_single_telemetry(new_tele))
-    # sort info list so the info table will have right order. we can also sort the info table, but we used the row index of table for selecting indidivuals(sometimes I used identity, sometimes maybe use id), it's better to keep the view sync with the data
-    # sorted_names <- sort(names(values$data$tele_list))
-    values$data$tele_list <- ctmmweb:::sort_tele_list(values$data$tele_list)
-    values$data$input_tele_list <- ctmmweb:::sort_tele_list(values$data$input_tele_list)
-    values$data$merged$info <- ctmmweb:::info_tele_list(values$data$tele_list)
-    values$time_ranges <- NULL
-    verify_global_data()
-    # LOG subset added
-    log_msg("New Time Range Subset Added", new_id)
-    shinydashboard::updateTabItems(session, "tabs", "plots")
-    msg <- paste0(new_id, " added to data")
-    showNotification(msg, duration = 2, type = "message")
+    # do we really need this? there will be duplicate row_name, but it should be specific to tele obj, i.e. always indexing in the matching tele obj, thus no duplication.
+    # new_dt[, row_name := paste0(row_name, new_suffix)]
+    # # update the row name in tele data frame by new row_name column
+    # row.names(new_tele) <- new_dt$row_name
+    # # update data
+    # all_dt <- values$data$merged$data_dt
+    # all_dt <- rbindlist(list(all_dt, new_dt))
+    # # ggplot sort id by name, to keep it consistent we also sort the info table. for data.table there is no need to change order (?), this can keep row_no mostly same
+    # all_dt[, id := factor(identity)]
+    # all_dt[, row_no := .I]
+    # values$data$merged$data_dt <- all_dt
+    # # need to wrap single obj otherwise it was flattened by c
+    # values$data$tele_list <- c(values$data$tele_list,
+    #                            ctmmweb:::wrap_single_telemetry(new_tele))
+    # # also update input tele from original input + new tele
+    # values$input_tele_list <- c(values$input_tele_list,
+    #                                  ctmmweb:::wrap_single_telemetry(new_tele))
+    # # sort info list so the info table will have right order. we can also sort the info table, but we used the row index of table for selecting indidivuals(sometimes I used identity, sometimes maybe use id), it's better to keep the view sync with the data
+    # # sorted_names <- sort(names(values$data$tele_list))
+    # values$data$tele_list <- ctmmweb:::sort_tele_list(values$data$tele_list)
+    # values$input_tele_list <- ctmmweb:::sort_tele_list(values$input_tele_list)
+    # values$data$merged$info <- ctmmweb:::info_tele_list(values$data$tele_list)
+    # values$time_ranges <- NULL
+    # verify_global_data()
+    # # LOG subset added
+    # log_msg("New Time Range Subset Added", new_id)
+    # shinydashboard::updateTabItems(session, "tabs", "plots")
+    # msg <- paste0(new_id, " added to data")
+    # showNotification(msg, duration = 2, type = "message")
   })
   output$time_ranges <- DT::renderDT({
     # it could be NULL from clear, or empty data.table from delete
@@ -1565,11 +1815,13 @@ output:
   # p5. variogram ----
   callModule(click_help, "vario_control", title = "Plot Controls",
              size = "l", file = "help/5_a_vario_control.md")
+  callModule(click_help, "vario_schedule", title = "Multiple Schedule ",
+             size = "l", file = "help/5_a_2_vario_schedule.md")
   callModule(click_help, "variograms", title = "Variograms",
              size = "l", file = "help/5_b_variograms.md")
-  # callModule(click_help, "vario_irregular", title = "Irregular Data",
-  #            size = "l", file = "help/5_b_irregular_data.md")
-  # values$selected_data_guess_list guessed parameters for current data, also can be manual adjusted from fine tune.
+  # various curve colors in variogram, tuned color is brighter variant
+  ctmm_colors <- ctmmweb:::CTMM_colors
+  # values$selected_data_guess_list current guessed parameters for current data, the manual adjusted value from fine tune are also updated here. original value are saved inside select_data_vario for reference. guess list should always have one guess for one animal, so this is named/indexed by animal name
   values$selected_data_guess_list <- NULL
   # calculate group plot row count and total canvas height from group list length and UI. this is needed in vario plot, overlap home range plot. vario mode and model mode need different value because model mode can coexist (home range/occur rely on it)
   layout_group <- function(group_list, figure_height, column) {
@@ -1578,20 +1830,20 @@ output:
     height <- figure_height * row_count
     return(list(row_count = row_count, height = height))
   }
-  # vario_dt ----
-  # each dt parameter row added to a reactive value. select_data_vario take it to apply on variogram parameters. a table take it to display current rows, which can be reset.
-  # init select input in select_data, also clear the reactive value in case data updated. similiarly, homerange weight need init and clear in select_model.
+  # multi schedule ----
+  ## multiple intervals with units create a multi schedule for one variogram. all UI are used to create values$multi_schedule_dt, which show summary as vario_intervals_table, each row for some animal and some intervals. the dt get processed in select_data_vario reactive.
+  ## init select input in select_data, also clear the reactive value in case data updated. similiarly, homerange weight need init and clear in select_model. reactive values (not expression) often need these manual maintaince.
   values$multi_schedule_dt <- NULL
-  observeEvent(input$add_vario_dt, {
+  observeEvent(input$add_vario_intervals, {
     multi_schedule_row <- data.table(
-      selected_names = list(req(input$vario_dt_ids)),
+      selected_names = list(req(input$vario_intervals_ids)),
       input_intervals = list(req(ctmmweb:::parse_comma_text_input(
-        input$vario_dt, NULL))),
-      time_unit = input$vario_dt_unit)
+        input$vario_intervals, NULL))),
+      time_unit = input$vario_intervals_unit)
     values$multi_schedule_dt <- rbindlist(list(values$multi_schedule_dt,
                                                multi_schedule_row))
   })
-  output$vario_dt_table <- DT::renderDT({
+  output$vario_intervals_table <- DT::renderDT({
     dt <- copy(req(values$multi_schedule_dt))
     # list column cannot be shown by DT, must convert to string
     dt[, identities := paste(selected_names[[1]], collapse = ", "),
@@ -1603,64 +1855,138 @@ output:
                   options = list(dom = 't', ordering = FALSE),
                   rownames = FALSE)
   })
-  observeEvent(input$remove_row_vario_dt, {
-    req(length(input$vario_dt_table_rows_selected) > 0)
-    dt_left <- values$multi_schedule_dt[!input$vario_dt_table_rows_selected]
+  observeEvent(input$remove_row_vario_intervals, {
+    req(length(input$vario_intervals_table_rows_selected) > 0)
+    dt_left <- values$multi_schedule_dt[!input$vario_intervals_table_rows_selected]
     # need to be NULL instead of empty table for easier req usage
     values$multi_schedule_dt <- if (nrow(dt_left) == 0) NULL else dt_left
   })
-  observeEvent(input$reset_vario_dt, {
+  observeEvent(input$reset_vario_intervals, {
     values$multi_schedule_dt <- NULL
   })
+  # detect with kmeans ----
+  # enable extra UI with checkbox. note the place holder have _ui as id postfix
+  output$kmeans_extra_ui <- renderUI({
+    if(input$enable_kmeans) {
+      tagList(
+        fluidRow(
+          column(5, offset = 0,
+                 sliderInput("k_prob", label = "Filter Outlier",
+                             min = 0, max = 0.2, value = 0.05, step = 0.01)),
+          column(5, offset = 2,
+                 sliderInput("kmeans_bins", label = "Histogram Bins",
+                             min = 1, max = 15, value = 7, step = 1))
+        ),
+        fluidRow(column(12, plotOutput("kmeans_hist"))),
+        fluidRow(
+          # disable minor ticks
+          tags$style(type = "text/css", ".irs-grid-pol.small {height: 0px;}"),
+          column(4, offset = 4,
+                 numericInput("k_input", "Change k for selected", value = 2,
+                              min = 1, max = 5, step = 1)),
+                 # sliderInput("k_slider", label = "Selected k",
+                 #             min = 1, max = 5, value = 2, step = 1)),
+          column(12, DT::DTOutput("kmeans_table"))
+        )
+      )
+    }
+  })
+  # values$kmeans_control_dt was initialized in select_data()
+  observeEvent(input$k_input, {
+    req(input$kmeans_table_rows_selected)
+    dt <- copy(values$kmeans_control_dt)
+    dt[input$kmeans_table_rows_selected, k := input$k_input]
+    values$kmeans_control_dt <- NULL
+    values$kmeans_control_dt <- dt
+  })
+  # detect_schedules() ----
+  # need to separate the k control table from the kmeans result, otherwise k changed -> result changed -> trigger table change and reactive change again. if only reading isolated, k changes will not trigger reevaluate.
+  # instead, make left part as k_control_dt, which is reactive value initialized, controlled by slider. reactive expression here just read it and get result as part of expression, which were shown as table. expression doesn't change control table.
+  detect_schedules <- reactive({
+    if(input$enable_kmeans) {
+      dt <- copy(select_data()$data_dt)
+      kmeans_dt <- copy(values$kmeans_control_dt)
+      # add inc_t columns
+      dt[, inc_t := t - shift(t, 1L), by = id]
+      dt[, inc_t_filtered := ctmmweb:::filter_inc_t(inc_t,
+                                                    prob = input$k_prob),
+         by = id]
+      unit_picked <- ctmmweb:::pick_unit_seconds(dt$inc_t_filtered)
+      dt[, inc_t_filtered_converted := round(
+        inc_t_filtered / unit_picked$scale, 2)]
+      # wanted to use id as we want to keep the color mapping in subset, but factor cannot get join work.
+      res <- lapply(1:nrow(kmeans_dt), function(i) {
+        ctmmweb:::detect_clusters(
+          na.omit(dt[identity == kmeans_dt[i, identity],
+                     inc_t_filtered_converted]),
+          kmeans_dt[i, k])
+      })
+      kmeans_dt[, clusters := .(res)]
+      clusters_dt <- kmeans_dt[, unlist(clusters), by = identity]
+      # join with id factor column to keep color mapping
+      clusters_dt <- merge(unique(dt, by = "id")[, .(identity, id)],
+                           clusters_dt, by = "identity", all.x = TRUE)
+
+      # the column is rendered with values too close in DT. need to convert to a better format. cannot update original column because different types list/characters. need to update it after clusters_dt is calculated because the fixed column name is easier
+      formated_col_name <- paste0("cluster_center(", unit_picked$name, ")")
+      kmeans_dt[, (formated_col_name) := paste(round(clusters[[1]], 2), collapse = ", "), by = 1:nrow(kmeans_dt)]
+      kmeans_dt[, clusters := NULL]
+      return(list(dt = dt, unit_picked = unit_picked,
+                  kmeans_dt = kmeans_dt, clusters_dt = clusters_dt))
+    }
+  })
+  output$kmeans_hist <- renderPlot({
+    dt <- req(detect_schedules())$dt
+    clusters_dt <- detect_schedules()$clusters_dt
+    # need to use fully qualified format after copied code from rmd, test with clean session, otherwise ggplot2 is loaded.
+    ggplot2::ggplot(dt, ggplot2::aes(x = inc_t_filtered_converted, fill = id)) +
+      ggplot2::geom_histogram(bins = input$kmeans_bins, na.rm = TRUE, show.legend = FALSE) +
+      ggplot2::geom_point(data = clusters_dt, ggplot2::aes(x = V1, y = 0),
+                          na.rm = TRUE, color = "blue", shape = 2,
+                          show.legend = FALSE) +
+      ggrepel::geom_text_repel(data = na.omit(clusters_dt),
+                               ggplot2::aes(x = V1, y = 0, label = V1)) +
+      ggplot2::xlab(paste0("Filtered Sampling Schedules(",
+                           detect_schedules()$unit_picked$name, ")")) +
+      ggplot2::facet_grid(id ~ .) +
+      ctmmweb:::factor_fill(dt$id) +
+      ctmmweb:::BIGGER_THEME
+  })
+  # when too much data was filtered, there may only have one cluster while k > 1, had error "more cluster centers than distinct data points."
+  output$kmeans_table <- DT::renderDT(
+    DT::datatable(req(detect_schedules()$kmeans_dt),
+                  options = list(columnDefs =
+                                   list(list(className = 'dt-center',
+                                             targets = "_all"))),
+                  rownames = FALSE)
+    )
   # pool vario ----
-  # each pooled variogram replace the individual variogram, the plot only plot one copy, but underlying list stay the same, keep the variogram:individual 1:1 mapping. dt, pool all reflected on variogram object, change plot title but not the variogram list name, keep the other tabs consistent.
-  # to keep the UI simple, don't show a DT table.
+  ## just create a list of pooled ids. each item is a vector of ids. processed in select_data_vario. to keep the UI simple, no need for a DT table, as the result is obvious in plot titles.
+  # each pooled variogram replace the individual variogram, the plot only plot one copy, but underlying list stay the same, keep the variogram:individual 1:1 mapping. multi schedule, pool all reflected on variogram object, change plot title but not the variogram list name, keep the other tabs consistent.
   values$pooled_vario_id_list <- NULL
   observeEvent(input$apply_pool_vario, {
     req(length(input$pool_vario_ids) > 1)
     values$pooled_vario_id_list <- c(values$pooled_vario_id_list,
                                 list(input$pool_vario_ids))
-    # updateSelectInput(session, "pool_vario_ids", choices = info$identity,
-    #                   selected = NULL)
-    # pooled_vario_row <- data.table(
-    #   pool_ids = list(req(input$pool_vario_ids)))
-    # # why unique here get silent result?
-    # values$pooled_vario_dt <- rbindlist(list(values$pooled_vario_dt,
-    #                                          pooled_vario_row))
   })
-  # output$pool_vario_table <- DT::renderDT({
-  #   dt <- copy(req(values$pooled_vario_dt))
-  #   # list column cannot be shown by DT, must convert to string
-  #   dt[, pooled_variograms := paste(pool_ids[[1]], collapse = ", "),
-  #      by = 1:nrow(dt)]
-  #   # to show as result table
-  #   DT::datatable(dt[, .(pooled_variograms)],
-  #                 options = list(dom = 't', ordering = FALSE),
-  #                 rownames = FALSE)
-  # })
-  # observeEvent(input$remove_row_pool_vario, {
-  #   req(length(input$pool_vario_table_rows_selected) > 0)
-  #   dt_left <- values$pooled_vario_dt[!input$pool_vario_table_rows_selected]
-  #   # need to be NULL instead of empty table for easier req usage
-  #   values$pooled_vario_dt <- if (nrow(dt_left) == 0) NULL else dt_left
-  # })
   observeEvent(input$reset_pool_vario, {
     values$pooled_vario_id_list <- NULL
   })
   # select_data_vario() ----
-  # variogram list and layout for current data in vario 1 and 2, based on select_data in visualization page. modeled mode have multiple models for every animal, need to have additional selection on models and new set of input, layout. The non-model mode and model mode are separate and need to independent from each other, both available no matter what mode is selected in UI, because home range/occurrence need model layout, fine-tune etc need vario info to avoid recalculation
+  ## variogram list and layout for current data before the model fit, based on select_data in visualization page. modeled mode have multiple models for every animal, need to have additional selection on models and new set of input, layout. The non-model mode and model mode are separate and need to independent from each other, both available no matter what mode is selected in UI, because home range/occurrence need model layout, fine-tune etc need vario info to avoid recalculation
   select_data_vario <- reactive({
     tele_list <- select_data()$tele_list
     # take vario-dt parameter list
     dt_para_list <- vector("list", length = length(tele_list))
     names(dt_para_list) <- names(tele_list)
-    # 3 tabs have different requirement on plot titles. main title always come from animal name or model name, sub title when dt/pool need to be marked.
+    # 2 tabs have different requirement on plot titles. main title always come from animal name or model name, sub title when dt/pool need to be marked. all operations of vario are applied to variogram, which is animal based, so no matter what model, subtitle came from animal.
     # need to maintain dt part and pool part separately, if user click pool repeatitively, pool part should not add to another line.
     subtitle_dt_list <- vector("list", length = length(tele_list))
     subtitle_dt_list[1:length(subtitle_dt_list)] <- ""
     # item name as animal name, value as title content
     names(subtitle_dt_list) <- names(tele_list)
     subtitle_pool_list <- subtitle_dt_list
+    # -- multi schedule --
     ms_dt <- values$multi_schedule_dt
     if (!is.null(ms_dt)) {
       for (i in 1:nrow(ms_dt)) {
@@ -1673,8 +1999,8 @@ output:
         }
       }
     }
-    # vario_list <- lapply(tele_list, ctmm::variogram)
-    # original vario from tele need to be maintained in case new pool need some individuals
+    # -- pool vario --
+    # original vario from tele need to be maintained in case new pool need some individuals that were pooled
     vario_list_tele <- lapply(names(tele_list), function(x) {
       ctmm::variogram(tele_list[[x]], dt = dt_para_list[[x]])
     })
@@ -1691,51 +2017,53 @@ output:
         pooled_name <- paste0(current_ids, collapse = ", ")
         subtitle_pool_list[current_ids] <- paste0("\n(", pooled_name, ")")
       }
-      # all_pooled_ids <- unique(unlist(pool_dt, use.names = FALSE))
-      # remained_names <- names(vario_list_pool)[!(names(vario_list_pool) %in%
-      #                                            all_pooled_ids)]
-      # vario_list_pool <- vario_list_pool[remained_names]
-      # title_list_pool <- title_list_pool[remained_names]
     }
     # needed for figure title to include additional info
-    # title_vec <- unlist(subtitle_list)
-    # subtitle_vec <- unlist(subtitle_list)
     subtitle_list <- paste0(subtitle_dt_list, subtitle_pool_list)
     names(subtitle_list) <- names(subtitle_dt_list)
-    # tab 1, 2 plot title. tab 3 need different treatment
+    # plot title before model fit. after model fit need different treatment
     vario_title_vec <- paste0(names(vario_list), subtitle_list)
     vario_layout <- layout_group(vario_list,
                                      input$vario_height, input$vario_columns)
-    # tab 1 version, remove duplicate pooled variograms
-    # vario_list_1 <- vario_list[!duplicated(title_vec)]
-    # title_vec_1 <- title_vec[!duplicated(title_vec)]
-    # vario_layout_1 <- layout_group(vario_list_1,
-    #                                input$vario_height, input$vario_columns)
-    # generate guess with variogram input
-    # guess value need to be reactive value so it can be modified in manual fit.
-    values$selected_data_guess_list <- lapply(seq_along(tele_list),
+    # -- guess list --
+    # generate guess with variogram input. guess always map to animal 1:1, so named/indexed by animal name
+    ctmm_parameter <- if (input$guess_error_on) {
+      ctmm(error = TRUE)
+    } else {
+      ctmm()
+    }
+    original_guess_list <- lapply(seq_along(tele_list),
           function(i) {
             ctmm::ctmm.guess(tele_list[[i]], variogram = vario_list[[i]],
+                             CTMM = ctmm_parameter,
                              interactive = FALSE)
             })
+    names(original_guess_list) <- names(tele_list)
+    values$selected_data_guess_list <- original_guess_list
     return(list(vario_list = vario_list,
-                # vario_list_1 = vario_list_1,
                 vario_layout = vario_layout,
-                # vario_layout_1 = vario_layout_1,
-                # title_vec_1 = title_vec_1,
-                # title_vec = title_vec
                 vario_title_vec = vario_title_vec,
-                subtitle_list = subtitle_list))
+                subtitle_list = subtitle_list,
+                original_guess_list = original_guess_list))
   })
-  # variogram 1:empri ----
-  # no model, model_color parameter
-  output$vario_plot_1 <- renderPlot({
-    title_vec <-
+  # vario 1: empri, guess ----
+  ## show guess by default, since it's available. no need to turn off since it's the only curve. plot_vario support list of ctmm list, so we can plot two curves.
+  output$vario_plot_empirical <- renderPlot({
+    # select curves based on checkbox (came from ctmm_colors item name), a subset of c("guess", "guess_current"). note color also need subsetting.
+    # note the 2nd is "current guess values", not "tuned guess" because of our data structure. it will be more useful in model page, and work as legend (base plot legend was in plot box by default, need manual tweaking to put outside, not an option)
+    ctmm_list <- list(select_data_vario()$original_guess_list,
+                      values$selected_data_guess_list)
+    names(ctmm_list) <- names(ctmm_colors)[1:2]
+    selected_curves <- ctmmweb:::align_curve_lists(
+      ctmm_list[input$guess_curve_selector])
     # actual fraction value from slider is not in log, need to convert
     ctmmweb::plot_vario(select_data_vario()$vario_list,
+                        selected_curves,
                         title_vec = select_data_vario()$vario_title_vec,
                         fraction = 10 ^ input$zoom_lag_fraction,
                         relative_zoom = (input$vario_option == "relative"),
+                        model_color = ctmm_colors[1:2][
+                          input$guess_curve_selector],
                         cex = 0.72,
                         columns = input$vario_columns)
     # LOG save pic
@@ -1745,35 +2073,26 @@ output:
     select_data_vario()$vario_layout$height
     }
   )
-  # variogram 2:guess ----
-  output$vario_plot_2 <- renderPlot({
-    # actual fraction value from slider is not in log, need to convert
-    ctmmweb::plot_vario(select_data_vario()$vario_list,
-                        values$selected_data_guess_list,
-                        title_vec = select_data_vario()$vario_title_vec,
-                        fraction = 10 ^ input$zoom_lag_fraction,
-                        relative_zoom = (input$vario_option == "relative"),
-                        model_color = "green", cex = 0.72,
-                        columns = input$vario_columns)
-    # LOG save pic
-    log_save_vario("vario", select_data_vario()$vario_layout$row_count,
-                   input$vario_columns)
-  }, height = function() { # always use current selected layout
-    select_data_vario()$vario_layout$height
-  }
-  )
-  # variogram 3:modeled ----
+  # vario 2: modeled ----
   # all based on model selection table rows, by select_models(), only update after table generated and there is row selection updates. select_models() find model and variogram based on row selection, but if row selection didn't change, the reactive is not triggered so no modeled variogram drawn.
-  output$vario_plot_3 <- renderPlot({
+  output$vario_plot_modeled <- renderPlot({
     model_title_vec <- paste0(names(select_models()$model_list),
                               select_models()$subtitle_list)
+    # 3 curves: init_ctmm, model, model_current, same with color vec. select curves based on checkbox (all came from ctmm_colors item name)
+    m_dt <- select_models()$model_list_dt
+    ctmm_list <- list(m_dt$init_ctmm, m_dt$model, m_dt$model_current)
+    names(ctmm_list) <- names(ctmm_colors)[3:5]
+    selected_curves <- ctmmweb:::align_curve_lists(
+      ctmm_list[input$model_curve_selector])
     # actual fraction value from slider is not in log, need to convert
     ctmmweb::plot_vario(select_models()$vario_list,
-                        select_models()$model_list,
+                        selected_curves,
                         title_vec = model_title_vec,
                         fraction = 10 ^ input$zoom_lag_fraction,
                         relative_zoom = (input$vario_option == "relative"),
-                        model_color = "purple", cex = 0.72,
+                        model_color = ctmm_colors[3:5][
+                          input$model_curve_selector],
+                        cex = 0.72,
                         columns = input$vario_columns)
     # LOG save pic
     log_save_vario("vario", select_models()$vario_layout$row_count,
@@ -1782,112 +2101,79 @@ output:
     select_models()$vario_layout$height
   }
   )
-  # select individual plot to fine tune
-  output$tune_selector <- renderUI({
-    selectInput("tune_selected", NULL,
-                c("Fine-tune" = "", req(select_data()$info$identity)))
-  })
-  # fine tune fit start ----
-  observeEvent(input$tune_selected, {
-    if (input$tune_selected != "") {
-      # LOG fine tune start
-      log_msg("Fine-tune Parameters for", input$tune_selected)
-      showModal(modalDialog(title = paste0("Fine-tune parameters for ",
-                                           input$tune_selected),
-                      fluidRow(column(4, uiOutput("fit_sliders")),
-                               column(8, plotOutput("fit_plot")),
-                               column(4, offset = 2, uiOutput("fit_zoom"))),
-                      size = "l",
-                      footer = fluidRow(
-        column(3, actionButton("center_slider", "Center current sliders",
-                               icon = icon("align-center"))),
-        column(3, offset = 2,
-               modalButton("Cancel", icon = icon("ban"))),
-        column(2, offset = 2,
-               actionButton("tuned", "Apply",
-                            icon = icon("check"),
-                            style = ctmmweb:::STYLES$page_action)))
-                            ))
-    }
-  })
-  # init values of sliders ----
-  init_slider_values <- reactive({
+  # < fine tune sliders ----
+  ## 2 tabs have similar ui, write together in parallel so it's easier to compare for duplicates and differences.
+  # the layers of id namespace marked with ID:
+  # ID: selector called with guess/model, this is the first layer, in beginning, note ui and callModule using same value
+  # selection is dynamic and need to be an unresolved reactive expression
+  callModule(ctmmweb:::tuneSelector, id = "guess", placeholder = "Fine-tune",
+             reactive(req(select_data()$info$identity)), log_msg)
+  callModule(ctmmweb:::tuneSelector, id = "model", placeholder = "Fine-tune Model",
+             reactive(req(select_models()$info_dt$model_name)), log_msg)
+  # guess_page_data() ----
+  ## this reactive expression will be used as function parameter without (), so it's named like a noun.
+  # when code outside module need to access input inside module, we need to have id properly
+  # ID: accessing input$`guess-tune_selected` directly, so need to construct id. guess as 1st layer, tune_selected as the real part defined in tuneSelector server code.
+  # ID: also function need slider module id, `guess` used in selector module call, `tune` used in slider module UI call inside selector server code, so slider module's UI call actually is `guess-tune`, which is also slider module server call id.
+  guess_page_data <- reactive({
+    # in this page one animal should have only one vario, so everything is named/indexed by animal name. model page will be more complex, need model_name
     vario_list <- req(select_data_vario()$vario_list)
-    ids <- names(vario_list)
-    vario <- vario_list[ids == input$tune_selected][[1]]
-    CTMM <- values$selected_data_guess_list[ids == input$tune_selected][[1]]
-    fraction <- 10 ^ input$zoom_lag_fraction
-    STUFF <- ctmm:::variogram.fit.backend(vario, CTMM = CTMM,
-                                          fraction = fraction, b = 10)
-    dt <- data.table(STUFF$DF)
-    dt[, name := row.names(STUFF$DF)]
-    # zoom slider used different base, and minus 1 from min,max.
-    dt[name == "z", c("min", "max") := list(min - 1, max - 1)]
-    # initial is taken from last page control directly
-    dt[name == "z", initial := input$zoom_lag_fraction]
-    # didn't use the step value
-    slider_list <- lapply(1:nrow(dt), function(i) {
-      sliderInput(
-        inputId = paste0("vfit_", dt[i, name]),
-        label = dt[i, label], min = round(dt[i, min], 3),
-        max = round(dt[i, max], 3), value = round(dt[i, initial], 3),
-        step = 0.001)
-    })
-    names(slider_list) <- dt$name
-    # zoom is for view only, separate it from others
-    return(list(vario = vario, STUFF = STUFF,
-                control_dt = dt[name != "z"],
-                control_sliders = slider_list[names(slider_list) != "z"],
-                zoom_slider = slider_list[names(slider_list) == "z"]))
+    vario_id <- input$`guess-tune_selected`  # need the proper id
+    ctmm_obj_ref <- select_data_vario()$original_guess_list[vario_id][[1]]
+    ctmm_obj_current <- values$selected_data_guess_list[vario_id][[1]]
+    ctmmweb:::get_tune_page_data(vario_list[vario_id][[1]],
+                       ctmm_obj_ref, ctmm_obj_current,
+                       input$zoom_lag_fraction, "guess-tune")  # use module id
   })
-  # init control sliders
-  output$fit_sliders <- renderUI({
-    req(init_slider_values()$control_sliders)
+  # ID: slider module id same with the slider UI called inside selector module, `guess-tune`
+  guess_ctmm <- callModule(ctmmweb:::varioSliders, "guess-tune",
+                           guess_page_data, ctmm_colors[1:2], log_dt_md)
+  # model_page_data() ----
+  # using data defined later in model selection part, put code here for comparison
+  # ID: accessing input$`model-tune_selected`
+  # ID: model-tune
+  model_page_data <- reactive({
+    vario_list <- req(select_models()$vario_list)  # named by model_name
+    vario_id <- input$`model-tune_selected`  # model_name
+    vario <- vario_list[vario_id][[1]]
+    # note the fine-tune only draw 2 curves instead of 3 in group vario plot, model result and modified. too complex to include 2 and 3 in one module
+    ctmm_obj_ref <- select_models()$model_list_dt[
+      model_name == vario_id, model][[1]]
+    ctmm_obj_current <- select_models()$model_list_dt[
+      model_name == vario_id, model_current][[1]]
+    ctmmweb:::get_tune_page_data(vario, ctmm_obj_ref, ctmm_obj_current,
+                       input$zoom_lag_fraction, "model-tune")
   })
-  output$fit_zoom <- renderUI({
-    list(tags$head(tags$script(HTML(ctmmweb::JS.onload("vfit_z")))),
-         req(init_slider_values()$zoom_slider))
-  })
-  observeEvent(input$center_slider, {
-    adjust_slider <- function(name) {
-      # Shiny will complain for named vector
-      id <- paste0("vfit_", name)
-      # error slider usually have initial value of 0, double that will get 0.
-      if (input[[id]] != 0) {
-        updateSliderInput(session, id,
-                          max = round(input[[id]] * 2, 2))
-      }
-    }
-    lapply(init_slider_values()$control_dt$name, adjust_slider)
-  })
-  # current CTMM according to sliders
-  slider_to_CTMM <- reactive({
-    # there is a time when sliders are initialized but without value, then later storer call get NULL parameters
-    req(!is.null(input$vfit_sigma))
-    slider_values <- lapply(init_slider_values()$control_dt$name,
-                            function(x) {
-                              input[[paste0("vfit_", x)]]
-    })
-    names(slider_values) <- init_slider_values()$control_dt$name
-    CTMM <- do.call(init_slider_values()$STUFF$storer, slider_values)
-  })
-  # update plot by sliders ----
-  output$fit_plot <- renderPlot({
-    req(slider_to_CTMM())  # otherwise error: replacement of length zero
-    fraction <- 10 ^ input$vfit_z
-    plot(init_slider_values()$vario, CTMM = slider_to_CTMM(),
-         col.CTMM = "green", fraction = fraction)
-  })
-  observeEvent(input$tuned, {
+  model_ctmm <- callModule(ctmmweb:::varioSliders, "model-tune",
+                           model_page_data, ctmm_colors[4:5], log_dt_md)
+  # apply guess tuned ----
+  # - is not valid in symbol, note how the id is constructed
+  # ID: apply button id tuned, module ns guess-tune, so final `guess-tune-tuned`
+  # ID: accessing selector selection input$`guess-tune_selected`
+  observeEvent(input$`guess-tune-tuned`, {
     # LOG fine tune apply
     log_msg("Apply Fine-tuned Parameters")
     removeModal()
-    ids <- sapply(select_data_vario()$vario_list,
-                  function(vario) vario@info$identity)
-    values$selected_data_guess_list[ids == input$tune_selected][[1]] <-
-      slider_to_CTMM()
+    # with pooled vario, the variogram internal name may change, but list item name is still same, we still use animal name as index.
+    values$selected_data_guess_list[input$`guess-tune_selected`][[1]] <-
+      guess_ctmm()
   })
-  # fine tune fit end ----
+  # apply model tuned ----
+  observeEvent(input$`model-tune-tuned`, {
+    # LOG fine tune apply
+    log_msg("Apply Fine-tuned Parameters")
+    removeModal()
+    # must assign NULL to trigger change as data.table modify by reference
+    # this will reevaluate summary_models and select_models, although the visible model table doesn't change. difficult to prevent this reevaluation.
+    dt <- values$model_list_dt
+    dt[model_name == input$`model-tune_selected`,
+       model_current := list(list(model_ctmm()))]
+    dt[model_name == input$`model-tune_selected`,
+       model_tuned := TRUE]
+    values$model_list_dt <- NULL
+    values$model_list_dt <- dt
+  })
+  # fine tune sliders > ----
   # p5. model selection ----
   callModule(click_help, "model_selection", title = "Model Selection",
              size = "l", file = "help/5_c_model_selection.md")
@@ -1895,102 +2181,98 @@ output:
   # use value instead of reactive expression, because we used a button so need to use observeEvent, cannot start fit automatically by reactive expression.
   # this is the try model (model selection in ctmm context, but we have a select model process, so use different names now) results for current animal subset. home range and occurence are based on further selected models
   # values$selected_data_model_try_res <- NULL  # need to clear this at input change too
-  # try models() ----
+  # previously summary_models generate model_list_dt from res of try_models. now we need to put model_list_dt in reactive value so it can be modified from multiple places.
+  values$model_list_dt <- NULL
+  # all model dt have same key columns for easier merge, use local variable so we can refer it inside dt.
+  model_dt_id_cols <- ctmmweb:::model_dt_id_cols
+  # try_models() ----
+  ## auto fit models for current data, using current guess values. we want to init model_list_dt here because it should only happen in auto fit. summary_model could update for refit, if that triggered the dt will get initialized again in middle.
   try_models <- reactive({
     # need 1st tab ready. write separately, don't want to check length on req
     req(values$selected_data_guess_list)
     # not the best measure to detect data inconsistency but the simplest. rely on select_data to switch tab, make sure go through 1st tab first.
     req(length(select_data()$tele_list) ==
           length(values$selected_data_guess_list))
-    tele_guess_list <- ctmmweb::align_list(select_data()$tele_list,
+    tele_guess_list <- ctmmweb::align_2_list(select_data()$tele_list,
                                            values$selected_data_guess_list)
     # LOG try models
     log_msg("Trying different models...")
     withProgress(print(system.time(
       res <-
         par_try_tele_guess_mem(tele_guess_list,
-                               parallel = option_selected("parallel")))),
+                               parallel = input_value("parallel")))),
       message = "Trying different models to find the best ...")
     # always save names in list
     names(res) <- names(select_data()$tele_list)
-    # we are selecting rows on a table just generated.
-    # this line caused update loop, the summary_models changed
-    # DT::selectRows(proxy_model_dt, summary_models()$first_models)
+    # initialize model_list_dt in auto fit
+    model_list_dt <- ctmmweb:::model_try_res_to_model_list_dt(res)
+    # always add dAICc columns after conversion, after merge list_dt
+    ctmmweb:::compare_models(model_list_dt)
+    # no need to mark tuned-guess. it's obvious in tab 1, and we can get all current guess directly
+    model_list_dt[, init_ctmm_name := "guess"]
+    model_list_dt[, init_ctmm := list(list(
+      values$selected_data_guess_list[[identity]])), by = model_no]
+    # we want to initialize it in auto fit, but refit will change it which could trigger try_models to re-evaluate.
+    isolate(values$model_list_dt <- model_list_dt)
     return(res)
-    # }
   })
-  # observeEvent(input$try_models, {
-  #   # it's common to use existing table row selection in some reactives, until the correct selection updated and reactive evaluate again. With previous fitted models and selection rows, next fit on different animal will first try to plot with existing selection number. Freeze it so we can update the correct selection first. freeze halt the chain (like req), then thaw after other finished.
-  #   # freeze didn't solve the problem when fit models and have table generated, row selected. disable paralle, fit again, table didn't update, no row selection event, no selected models update. this can be solved by selecting some row in table.
-  #   # freezeReactiveValue(input, "tried_models_summary_rows_selected")
-  #   # instead, we clear the table selection, which should solve both needs. the clear is not executed until fitting finished, but it's queued before actual selecting, so table did update.
-  #   DT::selectRows(proxy_model_dt, list())
-  #   # guess_list is updated inside select_data_vario_list, but select_data_vario_list is not referenced here, if still in model mode, it was not referenced in UI too, so it didn't get updated.
-  #   tele_guess_list <- ctmmweb::align_list(select_data()$tele_list,
-  #                                 values$selected_data_guess_list)
-  #   # LOG try models
-  #   log_msg("Trying different models...")
-  #   withProgress(print(system.time(
-  #     values$selected_data_model_try_res <-
-  #       par_try_tele_guess_mem(tele_guess_list,
-  #                              parallel = option_selected("parallel")))),
-  #     message = "Trying different models to find the best ...")
-  #   # always save names in list
-  #   names(values$selected_data_model_try_res) <- names(select_data()$tele_list)
-  #   # sometimes nothing is shown in 3 modes. could be data lock in complex reactive relationship. try to freeze the radio button to make sure it update in last
-  #   # freezeReactiveValue(input, "vario_mode")
-  #   # updateRadioButtons(session, "vario_mode", selected = "modeled")
-  #   # we are selecting rows on a table just generated.
-  #   DT::selectRows(proxy_model_dt, summary_models()$first_models)
-  # })
   # summary_models() ----
-  # summary table and model dt with model as list column
+  ## lots of action: create formated summary_dt for table, model_info_dt for model color, hr_pal color function, best models for each animal
   summary_models <- reactive({
-    # the dt with model in list column
-    models_dt <- ctmmweb:::model_try_res_to_model_list_dt(
-      # req(values$selected_data_model_try_res)
-      try_models()
-      )
-    # the model summary table
-    formated_summary_dt <-
-      ctmmweb:::model_list_dt_to_formated_model_summary_dt(models_dt)
+    # we need to reference try_models in summary_models otherwise it will not be executed.
+    try_models()
+    # the model summary table to be shown, so it's formated. note each model has 3 rows here for CI values -- now become single row table
+    summary_dt <- ctmmweb:::model_list_dt_compared_to_summary_dt(
+      req(values$model_list_dt))
+    summary(values$model_list_dt[4, model][[1]]) # not unit problem
+    # hide ci now hide ci columns, not rows
     if (input$hide_ci_model) {
-      formated_summary_dt <- formated_summary_dt[
-        !stringr::str_detect(estimate, "CI")]
+      # summary_dt <- summary_dt[!stringr::str_detect(estimate, "CI")]
+      all_cols <- names(summary_dt)
+      cols_keep <- all_cols[!stringr::str_detect(all_cols, "CI")]
+      summary_dt <- summary_dt[, ..cols_keep]
     }
-    # need a full model table with identity(for base color), full name to create model color, basically a full version of selected model table. the color pallete and mapping function must be based on full table, not current selected subset.
-    model_names_dt <- unique(formated_summary_dt[,
-                            .(identity, model_type, model_name)])
+    # also need an internal table to hold full model information (not limited to selected rows subset in model table, because color pallete and mapping function need to be based on full table). identity is needed for base color, model_name (as full name) needed for color indexing, basically a full version of selected model table. note this table don't have CI columns, each model only have 1 row
+    model_info_dt <- unique(summary_dt[, ..model_dt_id_cols])
     # prepare model color, identity color function
-    model_names_dt[, base_color := values$id_pal(identity)]
-    model_names_dt[, variation_number := seq_len(.N), by = identity]
-    model_names_dt[, model_color :=
+    model_info_dt[, base_color := values$id_pal(identity)]
+    model_info_dt[, variation_number := seq_len(.N), by = identity]
+    model_info_dt[, model_color :=
                      ctmmweb:::vary_color(base_color, .N)[variation_number],
                    by = identity]
     # need ordered = TRUE for character vector not being factor yet.
-    hr_pal <- leaflet::colorFactor(model_names_dt$model_color,
-                          model_names_dt$model_name, ordered = TRUE)
+    hr_pal <- leaflet::colorFactor(model_info_dt$model_color,
+                          model_info_dt$model_name, ordered = TRUE)
     # calculate the first model row number depend on table mode (hide/show CI)
-    # we don't want the row number to show in the final table
-    dt <- copy(formated_summary_dt)
-    dt[, row_no := .I]
-    model_position <- if (input$hide_ci_model) 1 else 2
-    first_models <- dt[, row_no[model_position], by = identity]$V1
-    return(list(models_dt = models_dt, # with CTMM model in column
-                summary_dt = formated_summary_dt,
-                model_names_dt = model_names_dt, # full name, color
+    # assuming the model table always sorted by dAICc, which should be true from model summary.
+    # each model has 3 rows, so row number is different from existing columns, and we need the row number for row selection. don't want the row number to show in the final table // one row now, but model_no may not be continous sorted, with the clean up models features. still need to use row_no
+    # dt <- copy(summary_dt)  # instead of copy, create column then delete
+    summary_dt[, row_no := .I]
+    # model_position <- if (input$hide_ci_model) 1 else 2
+    first_models <- summary_dt[, row_no[1], by = identity]$V1
+    summary_dt[, row_no := NULL]
+    return(list(
+      # model_list_dt = values$model_list_dt,
+                summary_dt = summary_dt,
+                model_info_dt = model_info_dt, # full name, color
                 hr_pal = hr_pal,
                 first_models = first_models))
   })
   # model summary ----
-  # format model summary table as DT, also used in home range page
+  # format model summary table as DT, also used in home range page. the color need to be based on global table, so model_types, info_p need to be transfered
   render_model_summary_DT <- function(dt, model_types, info_p, selected_rows) {
     DT::datatable(dt, selection = list(mode = "multiple",
                                        selected = selected_rows,
                                        target = 'row'),
-                  options = list(scrollX = TRUE,
-                                 pageLength = 18,
-                                 lengthMenu = c(18, 36, 72)),
+                  options = list(
+                    columnDefs = list(list(className = 'dt-center',
+                                           targets = "_all")),
+                    scrollX = TRUE,
+                    # this caused header misalignment
+                    # autoWidth = TRUE,
+                    pageLength = 18,
+                    lengthMenu = c(18, 36, 72)),
+                  class = 'white-space: nowrap display',
                   rownames = FALSE) %>%
       # majority cells in color by model type
       DT::formatStyle('model_type', target = 'row',
@@ -2001,31 +2283,29 @@ output:
       DT::formatStyle('identity', target = 'cell',
                       color = DT::styleEqual(info_p$identity,
                                              scales::hue_pal()(nrow(info_p)))
-      ) %>%
-      # override the low/high cols with background
-      DT::formatStyle('estimate', target = 'row',
-                      backgroundColor = DT::styleEqual(
-                        c("CI low", "ML" , "CI high"),
-                        c("#FFFFFF", "#F7F7F7", "#F2F2F2"))
       )
+    # %>%
+    #   # override the low/high cols with background
+    #   DT::formatStyle('estimate', target = 'row',
+    #                   backgroundColor = DT::styleEqual(
+    #                     c("CI low", "ML" , "CI high"),
+    #                     c("#FFFFFF", "#F7F7F7", "#F2F2F2"))
+    #   )
   }
   output$tried_models_summary <- DT::renderDT({
     # should not need to use req on reactive expression if that expression have req inside.
     dt <- copy(summary_models()$summary_dt)
     # delete extra col here so it will not be shown, need to copy first otherwise it get modified.
-    dt[, model_no := NULL]
+    # dt[, model_no := NULL]
     dt[, model_name := NULL]
+    # use shorter column names. this should only affect display table and log table, not internal structure
+    setnames(dt, "model_no", "no")
     # LOG tried models
     log_dt_md(dt, "Tried Models")
     # need the full info table to keep the color mapping when only a subset is selected
     info_p <- values$data$merged$info
-    # CI_colors <- color_CI(values$data$merged$info$identity)
     # base::sort have different result in linux, hosted server.
     model_types <- stringr::str_sort(unique(dt$model_type))
-    # DT_table <- render_model_summary_DT(dt, model_types, info_p)
-    # # select models otherwise no variogram plot
-    # DT::selectRows(proxy_model_dt, summary_models()$first_models)
-    # return(DT_table)
     # pre-select with init parameter instead of proxy
     render_model_summary_DT(dt, model_types, info_p,
                             summary_models()$first_models)
@@ -2058,20 +2338,21 @@ output:
     rows_selected_sorted <- sort(req(input$tried_models_summary_rows_selected))
     # previous model selection value may still exist
     model_summary_dt <- summary_models()$summary_dt
-    selected_names_dt <- unique(model_summary_dt[rows_selected_sorted,
-                                           .(identity, model_type, model_name)])
+    # note this can be any order, not original row order
+    selected_info_dt <- unique(model_summary_dt[rows_selected_sorted,
+                                                ..model_dt_id_cols])
     # we want to remove the model part from displayed name if there is no multiple models from same animal. model_name is a unique full name, better keep it as it's used in color mapping, while the displayed name can change depend on selection -- once selected multiple models with same animal, displayed name will change.
-    # display_name is a dynamic column depend on selection so it's created here. use simple animal name when no duplicate, full model name when multiple models from same animal are selected. Although created here, it's not shown in model summary table, but can be used in plot title, overlap tables. the condition is negative here but it matches the verb: !=0 means duplicate exist.
-    # home range table, plot, overlap page take display_name. the model page still use modal name even no duplication, because the model table exists.
-    if (anyDuplicated(selected_names_dt, by = "identity") != 0) {
-      selected_names_dt[, display_name := model_name]
+    # home range table, plot, overlap page often only select one model per animal, thus created display_name to use animal name instead of full model name if no duplication. For model page, tab 1 is always animal name (no model yet), tab 2 is always model_name (we are dealing with models), not using this.
+    # the condition is negative here but it matches the verb: !=0 means duplicate exist.
+    if (anyDuplicated(selected_info_dt, by = "identity") != 0) {
+      selected_info_dt[, display_name := model_name]
     } else {
-      selected_names_dt[, display_name := identity]
+      selected_info_dt[, display_name := identity]
     }
-    # get color
-    selected_names_dt <- merge(summary_models()$model_names_dt,
-                               selected_names_dt,
-                               by = c("identity", "model_type", "model_name"))
+    # get color, keep order
+    selected_info_dt <- merge(selected_info_dt,
+                              summary_models()$model_info_dt,
+                              by = model_dt_id_cols, sort = FALSE)
     # overlap table, overlap home range plot need colors. it cannot be based on identity only because multiple models of same identity can be selected. so it will be model_color, just like maps. apply them to home range, occurenc too.
     # These information came from model_summary (display name depend on row selection, in select_models)
     # color overlap table need a function map from v1 v2 value to color. all v1 v2 value came from display name, so we just add a color column.
@@ -2080,44 +2361,100 @@ output:
     # home range/occurrence plot need color vector in same order
     # we create a named vector [display_name = color] for indexing, and create a function from that vector in home range plot. compare to creating the mapping function here, the indexing vector is created in one time merging instead of each checking need a merge, and the transfered parameter is a static vector instead of a function with enclosed variables.
     # all needs can be satisfied with this named vector.
-    display_color <- selected_names_dt$model_color
-    names(display_color) <- selected_names_dt$display_name
+    display_color <- selected_info_dt$model_color
+    names(display_color) <- selected_info_dt$display_name
     # selections can be any order, need to avoid sort to keep the proper model order
-    selected_models_dt <- merge(selected_names_dt, summary_models()$models_dt,
-                                by = c("identity", "model_type"), sort = FALSE)
+    selected_model_list_dt <- merge(selected_info_dt, values$model_list_dt,
+                                    by = model_dt_id_cols, sort = FALSE)
     # the row click may be any order or have duplicate individuals, need to index by name instead of index
-    selected_tele_list <- select_data()$tele_list[selected_names_dt$identity]
+    selected_tele_list <- select_data()$tele_list[selected_info_dt$identity]
     # data.table of further selection of models on row selection select_data()
     selected_data_dt <- select_data()$data_dt[
-      identity %in% selected_names_dt$identity]
-    selected_model_list <- selected_models_dt$model
-    # the modeled variogram plot title come from here. For now it's model_name.
-    names(selected_model_list) <- selected_names_dt$model_name
+      identity %in% selected_info_dt$identity]
+    selected_model_list <- selected_model_list_dt$model
+    # the modeled variogram plot title come from here.
+    names(selected_model_list) <- selected_info_dt$model_name
     selected_vario_list <- select_data_vario()$vario_list[
-      selected_names_dt$identity]
+      selected_info_dt$identity]
+    # fine-tune pick by model_name, so we need to name vario_list by model_name, compare to tab 1 named by animal name
+    names(selected_vario_list) <- selected_info_dt$model_name
     selected_subtitle_list <- select_data_vario()$subtitle_list[
-      selected_names_dt$identity]
-    # selected_names_dt[, model_name := stringr::str_c(identity, " - ", model_type)]
+      selected_info_dt$identity]
     # vario layout for selected models
     selected_vario_layout <- layout_group(selected_vario_list,
                                      input$vario_height, input$vario_columns)
     # LOG selected models
-    log_dt_md(selected_names_dt[, .(identity, model_type)], "Selected Models")
+    log_dt_md(selected_info_dt[, .(model_no, identity, model_type)], "Selected Models")
     # update home range weight selector choices
     updateSelectInput(session, "hrange_weight",
-                      choices = selected_names_dt$display_name)
+                      choices = selected_info_dt$display_name)
     # this value is not updated yet when selectinput itself changed
     values$hrange_weight_vec <- NULL
-    # must make sure all items in same order
-    return(list(names_dt = selected_names_dt,
+    # must make sure all items in same order, all order came from same source, all merge kept the order.
+    return(list(info_dt = selected_info_dt,
                 display_color = display_color,
                 tele_list = selected_tele_list,
                 data_dt = selected_data_dt,
-                model_list = selected_model_list,
-                vario_list = selected_vario_list,
+                model_list = selected_model_list,  # named by model_name
+                model_list_dt = selected_model_list_dt,
+                vario_list = selected_vario_list,  # named by model_name
                 subtitle_list = selected_subtitle_list,
                 vario_layout = selected_vario_layout
                 ))
+  })
+  # refit ----
+  ## with current selected models, depend on option fine-tune only/all, refit
+  observeEvent(input$refit, {
+    # option of fine-tune only/all selected. we have tele, data of selected rows in select_models(), it's easier to start from there. no need to keep order here, the result will be sorted
+    refit_dt <- merge(select_models()$info_dt, req(values$model_list_dt),
+                      by = model_dt_id_cols)
+    # refit_dt map to select_models tables, so we can use logical index on other list output to select subset.
+    refit_dt[, to_refit := if (input$refit_tuned_only) model_tuned else TRUE]
+    if (!any(refit_dt$to_refit)) {
+      showNotification("No model meet the requirement ", duration = 4,
+                       type = "error")
+    } else {
+      tele_list <- select_models()$tele_list[refit_dt$to_refit]
+      init_ctmm_list <- refit_dt[(to_refit), model_current]
+      tele_guess_list <- ctmmweb::align_2_list(tele_list,
+                                             init_ctmm_list)
+      # LOG try models
+      log_msg("Refitting models...")
+      withProgress(print(system.time(
+        res <-
+          par_try_tele_guess_mem(tele_guess_list,
+                                 parallel = input_value("parallel")))),
+        message = "Refitting models ...")
+      # always use unique names in list, note these are base model full names
+      names(res) <- refit_dt[(to_refit), model_name]
+      # add to model_list_dt
+      model_list_dt_2 <- ctmmweb:::model_try_res_to_model_list_dt(res,
+                                  refit_dt[(to_refit), identity])
+      # need to generate dAICc columns even that's not complete, otherwise merge will fail
+      ctmmweb:::compare_models(model_list_dt_2)
+      # there could be multiple models from one base model
+      model_list_dt_2[, init_ctmm_name := names(res)[res_list_index]]
+      model_list_dt_2[, init_ctmm := list(list(
+        init_ctmm_list[[res_list_index]])), by = model_no]
+      new_dt <- rbindlist(list(values$model_list_dt, model_list_dt_2))
+      # update model_no, dAICc columns
+      new_dt <- new_dt %>% ctmmweb:::update_model_no() %>%
+                           ctmmweb:::compare_models()
+      # clear first to trigger changes
+      values$model_list_dt <- NULL
+      values$model_list_dt <- new_dt
+    }
+  })
+  # remove suboptimals ----
+  observeEvent(input$remove_bad_models, {
+    # find best model in each type for every animal. note one row per model now.
+    dt <- copy(req(values$model_list_dt))
+    dt[, row_no := .I]
+    best_models <- dt[, row_no[1], by = c("identity", "model_type")]$V1
+    dt[, row_no := NULL]
+    # only keep best
+    values$model_list_dt <- NULL
+    values$model_list_dt <- dt[best_models]
   })
   # p6. home range ----
   callModule(click_help, "home_range", title = "Home Range",
@@ -2129,12 +2466,21 @@ output:
   observeEvent(input$apply_hrange_weight, {
     values$hrange_weight_vec <- input$hrange_weight
   })
+  observeEvent(input$hrange_weight_all, {
+    if (input$hrange_weight_all) {
+      updateSelectInput(session, "hrange_weight",
+                      selected = select_models()$info_dt$display_name)
+    } else {
+      # NULL parameter will not change anything, need to be ""
+      updateSelectInput(session, "hrange_weight", selected = "")
+    }
+  })
   # we want to change home range plot title but need to keep hrange names consistent, overlap page rely on hrange names to match, color etc. to put title inside select_models_hranges will cause structure change and all usage change, so use a separate reactive instead.
   # get_hrange_weight_para() ----
   get_hrange_weight_para <- reactive({
     tele_list <- select_models()$tele_list
     # must use display name since it's possible to have same animal different models
-    display_names <- select_models()$names_dt$display_name
+    display_names <- select_models()$info_dt$display_name
     # need default value to be FALSE instead of NULL
     weights_list <- as.list(rep(FALSE, length(tele_list)))
     names(weights_list) <- display_names
@@ -2162,7 +2508,7 @@ output:
       message = "Calculating Home Range ...")
     # add name so plot can take figure title from it
     # used to be model name, changed to display name. both the plot title and overlap result matrix names come from this.
-    names(res) <- select_models()$names_dt$display_name
+    names(res) <- select_models()$info_dt$display_name
     return(res)
   })
   # home range levels ----
@@ -2170,23 +2516,21 @@ output:
   get_hr_levels <- reactive({ctmmweb:::parse_levels.UD(input$hr_contour_text)})
   # home range summary ----
   output$range_summary <- DT::renderDT({
-    # hrange_summary_dt <- model_list_dt_to_model_summary_dt(
-    #   build_hrange_list_dt(select_models()$names_dt, select_models_hranges()),
-    #   hrange = TRUE)
-    # dt <- format_hrange_summary_dt(hrange_summary_dt)
-    hrange_list_dt <- ctmmweb:::build_hrange_list_dt(select_models()$names_dt,
+    hrange_list_dt <- ctmmweb:::build_hrange_list_dt(select_models()$info_dt,
                                            select_models_hranges())
+
     dt <- ctmmweb:::hrange_list_dt_to_formated_range_summary_dt(hrange_list_dt,
                                                                 get_hr_levels())
     # remove extra columns to save space
-    dt[, model_no := NULL]
+    # dt[, model_no := NULL]
     dt[, model_name := NULL]
+    setnames(dt, "model_no", "no")
     # LOG home range summary
     log_dt_md(dt, "Home Range Summary")
-    if (input$hide_ci_hrange) {
-      dt <- dt[!stringr::str_detect(estimate, "CI")]
-      # dt[, estimate := NULL]
-    }
+    # if (input$hide_ci_hrange) {
+    #   dt <- dt[!stringr::str_detect(estimate, "CI")]
+    #   # dt[, estimate := NULL]
+    # }
     info_p <- values$data$merged$info
     # still use the full model type table color mapping to make it consistent.
     model_types <- stringr::str_sort(unique(
@@ -2195,8 +2539,6 @@ output:
   })
   # home range plot ----
   output$range_plot <- renderPlot({
-    # browser()
-    # selected_tele_list <- select_models()$tele_list
     hranges <- select_models_hranges()
     # change title in place to show weight parameter
     names(hranges) <- get_hrange_weight_para()$title_vec
@@ -2224,7 +2566,7 @@ output:
           ctmm::writeRaster(hrange_list[[i]], folder = folder_path,
                             file = file.path(folder_path,
           # every component in file.path is a level in folder, file name need to concatenated first.
-              paste0(select_models()$names_dt$model_name[i],
+              paste0(select_models()$info_dt$model_name[i],
                      ".", file_extension)
                                     ))
         }
@@ -2247,7 +2589,7 @@ output:
         for (i in seq_along(hrange_list)) {
           ctmm::writeShapefile(hrange_list[[i]], level.UD = ud_levels,
                                folder = folder_path,
-                               file = select_models()$names_dt$model_name[i])
+                               file = select_models()$info_dt$model_name[i])
         }
       }
       return(write_f)
@@ -2313,8 +2655,7 @@ output:
   # select_models_overlap() ----
   select_models_overlap <- reactive({
     # home range overlap
-    overlap_hrange <- ctmm::overlap(select_models_hranges(),
-                                    CTMM = select_models()$model_list)
+    overlap_hrange <- ctmm::overlap(select_models_hranges())
     # data.table of overlap matrix. round 4 digits because value is 0 ~ 1
     overlap_hrange %>%
       ctmmweb::overlap_matrix_to_dt() %>%
@@ -2496,14 +2837,14 @@ output:
     withProgress(print(system.time(
       res <- par_occur_mem(select_models()$tele_list,
                            select_models()$model_list,
-                           parallel = option_selected("parallel")))),
+                           parallel = input_value("parallel")))),
                  message = "Calculating Occurrence ...")
-    # if (option_selected("log_error")) {
+    # if (input_value("log_error")) {
     #   output$occurrence_info <- renderPrint(str(res))
     # }
     # add name so plot can take figure title from it
     # # used to be model name, changed to display name. both the plot title and overlap result matrix names come from this.
-    names(res) <- select_models()$names_dt$display_name
+    names(res) <- select_models()$info_dt$display_name
     res
   })
   # function on input didn't update, need a reactive expression?
@@ -2531,13 +2872,18 @@ output:
   # save map to html, record html path in CURRENT_map_path. this is used in log save, and download map button.
   save_map <- function(leaf, map_type) {
     map_file_name <- stringr::str_c(map_type, "_", ctmmweb:::current_timestamp(), ".html")
+    map_file_adjacent_folder_name <- stringr::str_c(map_type, "_", ctmmweb:::current_timestamp(), "_files")
     # LOG saving map
     log_msg(stringr::str_c("Saving map: ", map_type))
     map_path <- file.path(LOG_folder, map_file_name)
-    # the library folder is still saved even with selfcontained = TRUE. This didn't happen in vignettes script. the source code said pandoc is needed for selfcontained option, but there is no error message.
+    # the library folder is still saved even with selfcontained = TRUE. This didn't happen in vignettes script. [pandoc is needed for selfcontained option, but there is no error message](https://github.com/ramnathv/htmlwidgets/blob/master/R/savewidget.R#L46)
     htmlwidgets::saveWidget(leaf, file = map_path, selfcontained = TRUE)
+    # remove the library folder as it is not needed, also too many files
+    unlink(file.path(LOG_folder, map_file_adjacent_folder_name), recursive = TRUE)
     # add link in rmd, difficult to embed map itself.
     log_add_rmd(stringr::str_c("\n[", map_type, "](", map_file_name, ")\n"))
+    # in preview mode, plots and maps are in separate files, available in html. in saved zip, these files are in another zip. plots are embeded but map cannot be embeded, need to copy them so report in saved zip can open the map.
+    file.copy(map_path, file.path(session_tmpdir, map_file_name))
     # record the latest file path
     CURRENT_map_path[[map_type]] <<- map_path
   }
@@ -2568,15 +2914,15 @@ output:
     # there could be mismatch between individuals and available home ranges. it's difficult to test reactive value exist(which is an error when not validated), so we test select_models instead. brewer pallete have upper/lower limit on color number, use hue_pal with different parameters.
     if (ctmmweb:::reactive_validated(select_models_hranges())) {
       # color pallete need to be on full model name list, but we don't want to change the model summary table since it doesn't need to be displayed in app.
-      # hr_pal <- model_pal(summary_models()$model_names_dt, id_pal)
+      # hr_pal <- model_pal(summary_models()$model_info_dt, id_pal)
       # the pallete function always came from full data
       hr_pal <- summary_models()$hr_pal
       # so we need to use full model_name as domains
-      selected_model_names <- select_models()$names_dt$model_name
+      selected_model_names <- select_models()$info_dt$model_name
       # though the layer name can be different. they are all just vectors in certain order, the home range/model_name/mapped color/display name all in same order.
       # use display name as layer name, but need to add post fix in simple format, when identity is not duplicated and used as display name directly
-      if (anyDuplicated(select_models()$names_dt, by = "identity") == 0) {
-       hrange_layer_names <- stringr::str_c(select_models()$names_dt$identity,
+      if (anyDuplicated(select_models()$info_dt, by = "identity") == 0) {
+       hrange_layer_names <- stringr::str_c(select_models()$info_dt$identity,
                                             " - Home Range")
       } else {
         hrange_layer_names <- selected_model_names
@@ -2701,7 +3047,7 @@ output:
     },
     content = function(file) {
       # we are checking input data instead of select_data, which is the real condition that can cause error, because it's easier to check and should be in same status
-      if (is.null(values$data$input_tele_list)) {
+      if (is.null(values$input_tele_list)) {
         showNotification("No data to save", duration = 7,
                          type = "error")
       } else {
@@ -2715,7 +3061,8 @@ output:
         log_dt_md(values$data$merged$info,
                   "Current Telemetry Data")
         fwrite(values$data$merged$data_dt,
-               file = file.path(session_tmpdir, "combined_data_table.csv"))
+               file = file.path(session_tmpdir, "combined_data_table.csv"),
+               dateTimeAs = "write.csv")
         # save error msg if captured
         if (input$capture_error) {
           flush(values$error_file_con)
@@ -2724,28 +3071,36 @@ output:
         }
         # also save report for reference
         generate_report(preview = FALSE)
-        # move to same directory for easier packing. use rename to reduce effort
-        # file.copy(values$html_path, file.path(session_tmpdir, "report.html"),
-        #           overwrite = TRUE)
+        # move to same directory for easier packing.
         file.rename(values$html_path, file.path(session_tmpdir, "report.html"))
         # the whole LOG folder with plot png/pdf in separate files. zip folder put zip to one level up the target folder, which is session_tmpdir. because the generated report was moved (not copied) to upper level, only other files are put in this zip.
         ctmmweb::zip_folder(LOG_folder, "plot.zip")
-        # pack to saved.zip, this is a temp name anyway. being sepecific should be better than zip everything.
+        # pack to saved.zip, this is a temp name anyway.
+        # files to be saved: "cache.zip", "data.rds", "report.html", "combined_data_table.csv", "plot.zip". error_log.txt could present or not depend on option, so didn't use a fixed name list(also difficult to maintain).
+        # will get folders in non-recursive mode, have to exclude them
+        files_folders <- list.files(session_tmpdir)
+        folders <- list.dirs(session_tmpdir,
+                             recursive = FALSE, full.names = FALSE)
+        files_to_save <- setdiff(files_folders, folders)
+        # we want to put target zip file in a different folder than input files, otherwise if user saved data at one time, then try to save again later, the zip input will have saved.zip and zip target is saved.zip, cause infinite writing. alternatively we can move the target zip instead of copy, but putting in different folder is safer
+        saved_zip_folder <- "saved_zip_folder"
+        ctmmweb:::create_folder(file.path(session_tmpdir, saved_zip_folder))
+        # target zip path is constructed from base folder and relative path, so we can use the partial path here
         saved_zip_path <- ctmmweb:::zip_relative_files(
-          session_tmpdir, c("cache.zip", "data.rds", "report.html",
-                            "error_log.txt",
-                            "combined_data_table.csv", "plot.zip"),
-          "saved.zip")
-        file.copy(saved_zip_path, file)
+          session_tmpdir, files_to_save,
+          file.path(saved_zip_folder, "saved.zip"))
+        # after zip generated, remove generated files in session temp folder. Because we copied map files here, if we don't clean up, 2nd saved progress will have map files in first save zipped too. NO, same session should have these files kept, new save will update same name file, and map files need to be kept since they are all needed in same session report
+        # unlink(file.path(session_tmpdir, files_to_save))
+        file.copy(saved_zip_path, file, overwrite = TRUE)
       }
     }
   )
   # load data ----
-  observeEvent(input$load_data, {
+  observeEvent(input$load_saved_data, {
     # LOG load data
-    log_msg("Loading previously saved data", input$load_data$name)
+    log_msg("Loading previously saved data", input$load_saved_data$name)
     # saved.zip -> cache.zip, data.rds, report.html, combined_data_table.csv
-    utils::unzip(input$load_data$datapath, exdir = session_tmpdir)
+    utils::unzip(input$load_saved_data$datapath, exdir = session_tmpdir)
     if (APP_local) {
       utils::browseURL(file.path(session_tmpdir, "report.html"))
     }
@@ -2756,7 +3111,7 @@ output:
     loaded_data <- readRDS(file.path(session_tmpdir, "data.rds"))
     # restore variables, also need to update id_pal, which are outside of data thus not restored, but it need to be built.
     values$data <- loaded_data
-    values$id_pal <- build_id_pal(values$data$merged$info)
+    values$id_pal <- ctmmweb:::build_id_pal(values$data$merged$info)
     shinydashboard::updateTabItems(session, "tabs", "plots")
   })
   # view_report ----

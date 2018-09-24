@@ -9,6 +9,29 @@
   font-size: small;
 }
 
+/* side bar numeric input, matching style to side bar. */
+#plot_dpi {
+  background: #444;
+  color: white;
+  border-color: gray;
+}
+label[for="plot_dpi"] {
+  color: lightgray;
+  font-weight: normal;
+}
+
+/* adjust radio button vertical alignment. right now only adjust specific item in place */
+/*
+.shiny-options-group {
+  margin-top: 4px;
+}
+*/
+
+#outlier_report {
+  display: inline-block;
+}
+
+
 #shiny-notification-panel {
   bottom: 50%;
   right: 30%;
@@ -28,9 +51,9 @@
 }
 
 .shiny-notification-warning {
-  background-color: #FFEB3B;
+  background-color: #f39c12;
   color: #000000;
-  border: 1px solid #ffe082;
+  border: 1px solid #f39c12;
 }
 
 .shiny-notification-error {

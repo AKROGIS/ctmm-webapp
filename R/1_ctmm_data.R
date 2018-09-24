@@ -1,7 +1,64 @@
 # ctmm data processing ----
-
+# make single obj into a list of one item, named by animal id. This make behavior of importing file with single animal and multiple animal consistent. Also needed in other cases.
+wrap_single_telemetry <- function(tele_obj){
+  if (class(tele_obj) != "list") {
+    # use same name so we can return same name if no change made
+    tele_obj <- list(tele_obj)
+    names(tele_obj) <- attr(tele_obj[[1]],"info")$identity
+  }
+  return(tele_obj)
+}
+# update a list of telemetry obj identity slot with new names, also update item name with new names
+update_tele_list_ids <- function(tele_list, new_name_vec){
+  for (i in seq_along(tele_list)) {
+    tele_list[[i]]@info$identity <- new_name_vec[i]
+  }
+  names(tele_list) <- new_name_vec
+  return(tele_list)
+}
+# import multiple files, also work with single file
+import_tele_files <- function(files) {
+  tele_list_list <- lapply(files, function(x) {
+    wrap_single_telemetry(as.telemetry(x))
+  })
+  tele_list <- unlist(tele_list_list, recursive = FALSE)
+  animal_names <- names(tele_list)
+  dupe_index <- duplicated(animal_names)
+  if (any(dupe_index)) {
+    new_names <- make.unique(animal_names)
+    warning("  Duplicate individual names found and changed:\n",
+            paste0("\t", animal_names[dupe_index], "\t->\t",
+                   new_names[dupe_index], "\n")
+    )
+    # change the identity slot in telemetry obj, and the item name in list
+    # this applied to all names, not just dup names. however this is clear in concept, not likely to have error
+    tele_list <- update_tele_list_ids(tele_list, new_names)
+  }
+  ctmm::projection(tele_list) <- ctmm::median(tele_list, k = 2)
+  return(tele_list)
+}
+# is_calibrated <- function(tele_obj) {
+#   # make sure it's logical otherwise it may return a numerical value
+#   isTRUE(ctmm::uere(tele_obj)["horizontal"])
+# }
+is_calibrated <- function(tele_obj) {
+  # integer will become index in switch, not working with 0
+  switch(as.character(ctmm:::is.calibrated(tele_obj)),
+         "1" = "yes",
+         "0" = "no",
+         NA_character_)
+}
+# uere_calibrated <- function(tele_obj) {
+#   if (ctmm:::is.calibrated(tele_obj) != 1) {
+#     return(NA_real_)
+#   } else {
+#     round(ctmm::uere(tele_obj)@.Data[["all", "horizontal"]], 3)
+#   }
+# }
 # get single animal info in one row data frame
 info_tele <- function(object) {
+  # sometimes the data is anonymized and don't have timestamp column. It has happened several times so we need to have proper error message.
+  stopifnot("timestamp" %in% names(object))
   # some data have one record for some individual, diff will return numeric(0), then median got NULL
   diffs <- diff(object$t)
   # the median of diff
@@ -12,22 +69,20 @@ info_tele <- function(object) {
   # above work on t which is cleaned by ctmm. original timestamp could have missing values
   t_start <- min(object$timestamp, na.rm = TRUE)
   t_end <- max(object$timestamp, na.rm = TRUE)
+  calibrated <- is_calibrated(object)
+  # uere_value <- uere_calibrated(object)
   # format the duration/interval units in list to make them use same unit
   data.table(identity = object@info$identity,
              start = format_datetime(t_start),
              end = format_datetime(t_end),
              interval = sampling_interval,
              duration = sampling_range,
-             points = nrow(object))
+             points = nrow(object),
+             calibrated = calibrated
+             # uere = uere_value
+             )
 }
-wrap_single_telemetry <- function(tele_obj){
-  if (class(tele_obj) != "list") {
-    # use same name so we can return same name if no change made
-    tele_obj <- list(tele_obj)
-    names(tele_obj) <- attr(tele_obj[[1]],"info")$identity
-  }
-  return(tele_obj)
-}
+
 # sort tele list by identity, ggplot always sort by id. ctmm keep same order in csv, but this should not create problem. actually I found the table is sorted from ctmm for old buffalo data 1764627, which is unsorted in csv.
 # we should keep the list sorted, not the info table. info table order match original list because we need to use table index.
 sort_tele_list <- function(tele_list) {
@@ -101,14 +156,15 @@ assign_distance <- function(animals_dt, tele_list, device_error = 10) {
              by = group_index]
   return(animals_dt)
 }
+# coati data has speed column, may have estimated speed later. change speed column name to assigned_speed
 # the naive definition of leaving speed. the NA cleaning is not ideal
 assign_speed_leaving <- function(animals_dt, tele_list, device_error) {
-  animals_dt[, speed := sqrt(inc_x ^ 2 + inc_y ^ 2) / inc_t]
-  animals_dt[is.infinite(speed), speed := NaN]
+  animals_dt[, assigned_speed := sqrt(inc_x ^ 2 + inc_y ^ 2) / inc_t]
+  animals_dt[is.infinite(assigned_speed), assigned_speed := NaN]
   # if last point n is outlier, n-1 will have high speed according to our definition, and n have no speed definition. assign n-1 speed to it. Then we don't need to clean up NA in speed too
   # this removed NaN too. The NA values caused speed outlier plot default subset to NULL. should not keep NA, NaN in speed, will cause too many troubles. could use negative value to mark
-  for (i in animals_dt[is.na(speed), which = TRUE]) {
-    animals_dt[i, speed := animals_dt[i - 1, speed]]
+  for (i in animals_dt[is.na(assigned_speed), which = TRUE]) {
+    animals_dt[i, assigned_speed := animals_dt[i - 1, assigned_speed]]
   }
   return(animals_dt)
 }
@@ -118,11 +174,11 @@ assign_speed_pmin <- function(animals_dt, tele_list, device_error) {
   # dt == 0, use the sampling resolution to estimate the time difference
   # animals_dt[inc_t == 0]
   # sampling_resolution <- gcd_vec(diff(animals_dt$t))
-  animals_dt[, speed := sqrt(inc_x ^ 2 + inc_y ^ 2) / inc_t]
+  animals_dt[, assigned_speed := sqrt(inc_x ^ 2 + inc_y ^ 2) / inc_t]
   # TODO these NA cleaning are temporary. not sure which is optimal. histogram will remove infinite value but we may want to filter these points. since this is just fallback temp method and mainly rely on ctmm function, stop here now. probably should clean dup time first in separate method, maybe remove them to list with a warning. in my leaving speed just assign to point before it, which is not ideal but hide all problems.
   # animals_dt[is.na(speed)]
-  animals_dt[is.infinite(speed), speed := NaN]
-  animals_dt[, speed_min := pmin(speed, shift(speed, 1L), na.rm = TRUE), by = id]
+  animals_dt[is.infinite(assigned_speed), assigned_speed := NaN]
+  animals_dt[, speed_min := pmin(assigned_speed, shift(assigned_speed, 1L), na.rm = TRUE), by = id]
   # the extended definition of pmin, take min(1->3, 1->2), min(N-2 ->N, N-1 ->N) speed for 1 and N. 1->2 and N-1 ->N are the previous defined value, the leaving speed of 1 and N-1. using x,y,t of next point - current point to get speed for current point.
   point_1 <- animals_dt[, .I[1], by = id]
   point_N <- animals_dt[, .I[.N], by = id]
@@ -132,7 +188,7 @@ assign_speed_pmin <- function(animals_dt, tele_list, device_error) {
     y_3_1 = shift(y, 1L, type = "lead") - y,
     t_3_1 = shift(t, 1L, type = "lead") - t), by = id]
   animals_dt[point_1$V1, speed_min_n :=
-               pmin(speed, sqrt(x_3_1 ^ 2 + y_3_1 ^ 2) / t_3_1,
+               pmin(assigned_speed, sqrt(x_3_1 ^ 2 + y_3_1 ^ 2) / t_3_1,
                     na.rm = TRUE),
              by = id]
   # for N we are using N, N-2 order so still using lead, note order of t
@@ -141,13 +197,13 @@ assign_speed_pmin <- function(animals_dt, tele_list, device_error) {
     y_N_2 = y - shift(y, 1L, type = "lead"),
     t_N_2 = t - shift(t, 1L, type = "lead")), by = id]
   animals_dt[point_N$V1, speed_min_n :=
-               pmin(speed, sqrt(x_N_2 ^ 2 + y_N_2 ^ 2) / t_N_2,
+               pmin(assigned_speed, sqrt(x_N_2 ^ 2 + y_N_2 ^ 2) / t_N_2,
                     na.rm = TRUE),
              by = id]
   # View(animals_dt[c(point_1$V1, point_1$V1 + 2, point_N$V1, point_N$V1 - 2), c(1:13, 17:25), with = TRUE][order(id)])
-  # to accompany extended definition, use speed_min first, now replace the speed column.
-  animals_dt[, speed := speed_min]
-  animals_dt[c(point_1$V1, point_N$V1), speed := speed_min_n]
+  # to accompany extended definition, use speed_min first, now replace the assigned_speed column.
+  animals_dt[, assigned_speed := speed_min]
+  animals_dt[c(point_1$V1, point_N$V1), assigned_speed := speed_min_n]
   animals_dt[, c("speed_min", "x_3_1", "y_3_1", "t_3_1", "speed_min_n",
                  "x_N_2", "y_N_2", "t_N_2") := NULL]
   return(animals_dt)
@@ -161,9 +217,10 @@ assign_speed_ctmm <- function(animals_dt, tele_list, device_error) {
   #                                            UERE = device_error, method = "max"),
   #            by = identity]
   # when using by = identity, each .SD don't have identity column, it's outside.
-  animals_dt[, speed := ctmm:::assign_speeds(
+  # follow usage in ctmm::outlie, error is calculated in distance function
+  animals_dt[, assigned_speed := ctmm:::assign_speeds(
                           tele_list[[identity]][row_name,],
-                          UERE = device_error)$v.t,
+                          UERE = error)$v.t,
              by = identity]
   return(animals_dt)
 }
@@ -180,14 +237,15 @@ assign_speed_ctmm <- function(animals_dt, tele_list, device_error) {
 #'
 #' @inheritParams assign_distance
 #'
-#' @return The input `data.table` with speed columns added. The name `assign`
-#'   hint on this nature.
+#' @return The input `data.table` with `assigned_speed` columns added. The name
+#'  `assign` hint on this nature.
 #' @export
 #'
 assign_speed <- function(animals_dt, tele_list, device_error = 10) {
   setkey(animals_dt, row_no)
   # note every parameter changes need to be present in every data call, several places
   # my speed calculation need distance columns
+  stopifnot(c("error", "distance_center") %in% names(animals_dt))
   test_calc <- function(data, tele_list, device_error, fun, fun_bak) {
     res <- tryCatch(fun(data, tele_list, device_error),
                     error = function(e) "error")

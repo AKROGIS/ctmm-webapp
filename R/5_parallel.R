@@ -14,7 +14,7 @@
 #'
 #' @export
 #'
-align_list <- function(list_a, list_b) {
+align_2_list <- function(list_a, list_b) {
   stopifnot(length(list_a) == length(list_b))
   # use lapply instead of for only because we can get a list without initialization
   lapply(seq_along(list_a), function(i) {
@@ -38,7 +38,7 @@ align_list <- function(list_a, list_b) {
 #'   function is accepted, otherwise it's difficult to determine how to assign
 #'   input parameters to each list item and worker. You need to convert multiple
 #'   parameter function into a function take single list parameter, and assign
-#'   parameters in that list accordingly. [align_list()] is a helper function to
+#'   parameters in that list accordingly. [align_2_list()] is a helper function to
 #'   align two lists.
 #' @param cores the core count to be used for cluster. Could be a positive
 #'  integer or
@@ -120,18 +120,61 @@ par_lapply <- function(lst, fun,
 # ctmm.select verbose = FALSE: same structure but no model type as name, with one extra layer compare to ctmm.fit. also the object content is different. there is no sense to use verbose = FALSE. though there may be a need for parallel ctmm.fit
 # trace will print progress, but console output is lost in parallel mode since they are not in master r process. it will be shown in non-parallel mode.
 # didn't add animal names to list because the aligned list lost model name information anyway. we added the names in calling code instead. It was only called once.
-par_try_tele_guess <- function(tele_guess_list,
-                               cores = NULL,
-                               parallel = TRUE) {
+# process multiple animals on multiple cores
+par_try_tele_guess_multi <- function(tele_guess_list,
+                                     cores = NULL,
+                                     parallel = TRUE) {
   # cannot use select_models name since that was a reactive expression to select model results by rows. use internal function for better locality, less name conflict. fit is also not optimal since it hint ctmm.fit
   # use try to refer the ctmm.select, use select to refer the manual select rows in model summary table.
   try_models <- function(tele_guess) {
-    ctmm::ctmm.select(tele_guess$a, CTMM = tele_guess$b,
-                      trace = TRUE, verbose = TRUE)
+    res <- try({
+      # log("a")
+      ctmm::ctmm.select(tele_guess$a, CTMM = tele_guess$b,
+                        control = list(method = "pNewton", cores = 1),
+                        trace = TRUE, verbose = TRUE)
+    })
+    if (inherits(res, "try-error")) {
+      message(res)
+      cat(crayon::white$bgMagenta("ctmm.select() failed with pNewton, switching to Nelder-Mead\n"))
+      res <- ctmm::ctmm.select(tele_guess$a, CTMM = tele_guess$b,
+                               trace = TRUE, verbose = TRUE)
+    }
+    return(res)
   }
   par_lapply(tele_guess_list, try_models, cores, parallel)
 }
-# convenience wrapped to take telemetry list, guess them, fit models. In app we want more control and didn't use this.
+# process single animal in multiple cores
+par_try_tele_guess_single <- function(tele_guess_list,
+                                     cores = NULL,
+                                     parallel = TRUE) {
+  cat(crayon::white$bgBlack("trying models on single animal with multiple cores\n"))
+  tele_guess <- tele_guess_list[[1]]
+  cores <- if (parallel) -1 else 1
+  res <- try({
+    # log("a")
+    ctmm::ctmm.select(tele_guess$a, CTMM = tele_guess$b,
+                      control = list(method = "pNewton", cores = cores),
+                      trace = TRUE, verbose = TRUE)
+  })
+  if (inherits(res, "try-error")) {
+    message(res)
+    cat(crayon::white$bgMagenta("ctmm.select() failed with pNewton, switching to Nelder-Mead\n"))
+    res <- ctmm::ctmm.select(tele_guess$a, CTMM = tele_guess$b,
+                             control = list(cores = cores),
+                             trace = TRUE, verbose = TRUE)
+  }
+  return(list(res))
+}
+par_try_tele_guess <- function(tele_guess_list,
+                               cores = NULL,
+                               parallel = TRUE) {
+  if (length(tele_guess_list) == 1) {
+    par_try_tele_guess_single(tele_guess_list, cores, parallel)
+  } else {
+    par_try_tele_guess_multi(tele_guess_list, cores, parallel)
+  }
+}
+# convenience wrapped to take telemetry list, guess them, fit models. In app we need modified guess list so didn't use this.
 
 #' Parallel fitting models on telemetry list
 #'
@@ -146,7 +189,7 @@ par_try_tele_guess <- function(tele_guess_list,
 par_try_models <- function(tele_list,
                            cores = NULL,
                               parallel = TRUE) {
-  tele_guess_list <- align_list(tele_list,
+  tele_guess_list <- align_2_list(tele_list,
                                 lapply(tele_list, function(x) {
                                   ctmm::ctmm.guess(x, interactive = FALSE)
                                 }))
@@ -167,7 +210,7 @@ par_try_models <- function(tele_list,
 par_fit_models <- function(tele_list,
                            cores = NULL,
                            parallel = TRUE) {
-  tele_guess_list <- align_list(tele_list,
+  tele_guess_list <- align_2_list(tele_list,
                                 lapply(tele_list, function(x) {
                                   ctmm::ctmm.guess(x, interactive = FALSE)
                                 }))
@@ -194,7 +237,7 @@ par_fit_models <- function(tele_list,
 par_occur <- function(tele_list, model_list,
                       cores = NULL,
                       parallel = TRUE) {
-  tele_model_list <- align_list(tele_list, model_list)
+  tele_model_list <- align_2_list(tele_list, model_list)
   occur_calc <- function(tele_model_list) {
     ctmm::occurrence(tele_model_list$a, tele_model_list$b)
   }
@@ -208,7 +251,8 @@ par_occur <- function(tele_list, model_list,
 #' waiting time in developing code that involved time consuming modeling
 #' processes. After code is tested and stablized, full size dataset can be used.
 #'
-#' @param m m even spaced points are taken from each object.
+#' @param m m even spaced points are taken from each object. If m > data size,
+#'   all points are taken.
 #'
 #' @export
 pick <- function(object, m) {UseMethod("pick")}
@@ -223,7 +267,7 @@ pick <- function(object, m) {UseMethod("pick")}
 #' @import ctmm
 pick.telemetry <- pick_tele <- function(tele, m) {
   # Rely on ctmm S3 method to treat telemetry object as a `data.frame`, thus ctmm need to be imported in NAMESPACE.
-  tele[floor(seq(from = 1, to = nrow(tele), length.out = m)), ]
+  tele[floor(seq(from = 1, to = nrow(tele), length.out = min(nrow(tele), m))), ]
 }
 
 #' @describeIn pick pick subset from each [ctmm::as.telemetry()] telemetry object

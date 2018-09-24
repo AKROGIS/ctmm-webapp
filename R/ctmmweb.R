@@ -14,4 +14,17 @@
 #' @name ctmmweb
 #' @import ctmm
 #' @import data.table
+#' @import shiny
+NULL
+
+#' Pipe operator
+#'
+#' Pipe an object forward into a function or call expression. See
+#' [magrittr](https://magrittr.tidyverse.org/reference/pipe.html).
+#'
+#' @importFrom magrittr %>%
+#' @name %>%
+#' @rdname pipe
+#' @export
+
 NULL

@@ -20,6 +20,12 @@ BIGGER_KEY <- ggplot2::guides(colour = ggplot2::guide_legend(
 #' @rdname ggplot_customization
 CENTER_TITLE <- ggplot2::theme(plot.title = ggplot2::element_text(
   hjust = 0.5, face = "bold"))
+# coord fixed ----
+# need this to hide the warning https://github.com/tidyverse/ggplot2/issues/2799
+# this is only needed when we added coord_fixed in function, then added another call in app to zoom. other single use in regular plot don't need this.
+coord_fixed_no_warning <- ggplot2::coord_fixed()
+coord_fixed_no_warning$default <- TRUE
+# color mapper ----
 # map color to a factor with unused levels included, but don't show them in legend.
 # note need to use loc_data$id format. note the mapping is provided in aes(color/fill = xx) already, this is to override some options.
 factor_mapper <- function(fac, FUN) {
@@ -36,7 +42,8 @@ factor_fill <- function(fac) {
 }
 factor_alpha <- function(fac) {
   # scale_alpha_discrete(drop = FALSE, breaks = levels(droplevels(fac)))
-  factor_mapper(fac, ggplot2::scale_alpha_discrete)
+  # ggplot2 3.0 give warnings, have to suppress
+  suppressWarnings(factor_mapper(fac, ggplot2::scale_alpha_discrete))
 }
 # plot 2 overview
 
@@ -70,7 +77,7 @@ plot_loc <- function(loc_data_subset, loc_data = NULL, point_size = 0.1) {
   }} +
     ggplot2::geom_point(data = loc_data_subset, ggplot2::aes(x, y, colour = id),
                         size = point_size, alpha = 0.7) +
-    ggplot2::coord_fixed() +
+    coord_fixed_no_warning +
     # ggplot2::coord_fixed(xlim = location_plot_gg_range$x,
     #                      ylim = location_plot_gg_range$y) +
     ctmmweb:::factor_color(loc_data_subset$id) +  # the color is right because id is factor, its levels included all values from full dataset ids.
@@ -101,7 +108,7 @@ plot_loc_facet <- function(loc_data_subset) {
                     ctmmweb:::format_distance_f(loc_data_subset$y)) +
     ctmmweb:::factor_color(loc_data_subset$id) +
     ggplot2::facet_grid(id ~ .) +
-    ggplot2::coord_fixed() +
+    coord_fixed_no_warning +
     ggplot2::theme(strip.text.y = ggplot2::element_text(size = 12)) +
     ctmmweb:::BIGGER_THEME + ctmmweb:::BIGGER_KEY
 }

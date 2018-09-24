@@ -1,4 +1,4 @@
-# help module ui part ----
+# help module ui ----
 help_button <- function(module_id) {
   prefix <- NS(module_id)
   actionButton(prefix("help"),
@@ -7,53 +7,59 @@ help_button <- function(module_id) {
                style = ctmmweb:::STYLES$help_button
   )
 }
-header <- dashboardHeader(title = "Animal Movement",
-            dropdownMenu(type = "messages",
-               # from for first line, message 2nd line smaller font
-               messageItem(
-                 from = "Project in Github",
-                 message = "Documentation, Source, Citation",
-                 icon = icon("github"),
-                 href = "https://github.com/ctmm-initiative/ctmmweb"),
-               messageItem(
-                 from = "Installed On",
-                 message = PKG_INSTALLATION_TIME,
-                 icon = icon("calendar-o")),
-               messageItem(
-                 from = "Issues",
-                 message = "Report Issues",
-                 icon = icon("exclamation-circle"),
-                 href = "https://github.com/ctmm-initiative/ctmmweb/issues"),
-               badgeStatus = NULL,
-               icon = icon("info-circle fa-lg"),
-               headerText = "App Information"
-               ))
+# header ----
+header <- dashboardHeader(title = "ctmmweb",
+                          dropdownMenuOutput("messageMenu")
+            # dropdownMenu(type = "messages",
+            #    # from for first line, message 2nd line smaller font
+            #    messageItem(
+            #      from = "Project in Github",
+            #      message = "Documentation, Source, Citation",
+            #      icon = icon("github"),
+            #      href = "https://github.com/ctmm-initiative/ctmmweb"),
+            #    messageItem(
+            #      from = "Installed On",
+            #      message = PKG_INSTALLATION_TIME,
+            #      icon = icon("calendar-o")),
+            #    messageItem(
+            #      from = "Issues",
+            #      message = "Report Issues",
+            #      icon = icon("exclamation-circle"),
+            #      href = "https://github.com/ctmm-initiative/ctmmweb/issues"),
+            #    badgeStatus = NULL,
+            #    icon = icon("info-circle fa-lg"),
+            #    headerText = "App Information"
+            #    )
+            )
 # sidebar ----
 sidebar <- dashboardSidebar(
   sidebarMenu(
     id = "tabs",
     # match tabItem, page_title in server.R need to sync with this.
-    menuItem("Import Data", tabName = "import",
+    menuItem(ctmmweb:::PAGE_title$import, tabName = "import",
                              icon = icon("upload"), selected = TRUE),
-    menuItem("Visualization", tabName = "plots",
+    menuItem(ctmmweb:::PAGE_title$plots, tabName = "plots",
                              icon = icon("line-chart")),
-    menuItem("Filter Outliers", tabName = "filter",
+    menuItem(ctmmweb:::PAGE_title$filter, tabName = "filter",
                              icon = icon("filter")),
-    menuItem("Time Subsetting", tabName = "subset",
+    menuItem(ctmmweb:::PAGE_title$subset, tabName = "subset",
                              icon = icon("pie-chart")),
-    menuItem("Model Selection", tabName = "model",
+    menuItem(ctmmweb:::PAGE_title$model, tabName = "model",
                              icon = icon("hourglass-start")),
-    menuItem("Home Range", tabName = "homerange",
+    menuItem(ctmmweb:::PAGE_title$homerange, tabName = "homerange",
                              icon = icon("map-o")),
-    menuItem("Overlap", tabName = "overlap",
+    menuItem(ctmmweb:::PAGE_title$overlap, tabName = "overlap",
                              icon = icon("clone")),
-    menuItem("Occurrence", tabName = "occurrence",
+    menuItem(ctmmweb:::PAGE_title$occurrence, tabName = "occurrence",
                              icon = icon("map-marker")),
-    menuItem("Map", tabName = "map", icon = icon("globe"))
+    menuItem(ctmmweb:::PAGE_title$map, tabName = "map", icon = icon("globe"))
     ,
     # menuItem("Work Report", tabName = "report",
     #                          icon = icon("file-text-o")),
     br(), br(),
+    fluidRow(column(8, numericInput("plot_dpi",
+                                    "Plot DPI",
+                                    value = 300, step = 50))),
     fluidRow(
       column(6, offset = 0,
                       downloadButton("save_data",
@@ -69,7 +75,7 @@ sidebar <- dashboardSidebar(
   # uiOutput("outlier_msg", inline = TRUE)
   # h4(" message about outlier")
 )
-# p1. import ----
+# p1.a app options ----
 app_options_box <- box(title = "App Options",
                                       status = "primary", solidHeader = TRUE,
                                       width = 12,
@@ -79,41 +85,20 @@ app_options_box <- box(title = "App Options",
                                  HTML('&nbsp;'),
                                  "Record Actions")
                              , value = TRUE)),
-    column(3, offset = 1, checkboxInput("capture_error",
+    column(4, offset = 0, checkboxInput("capture_error",
                                         div(icon("exclamation-triangle"),
                                             HTML('&nbsp;'),
-                                            "Capture Errors"),
-                                        value = TRUE)),
+                                            "Capture Error Messages"),
+                                        value = FALSE)),
     column(3, offset = 1, checkboxInput("parallel",
                             div(icon("cogs"),
                                 HTML('&nbsp;'),
                                 "Parallel Mode"),
                             value = TRUE)),
-    # column(4, checkboxGroupInput("error_log_parallel", label = NULL,
-    #                              choiceNames = list(
-    #                                div(icon("exclamation-triangle"),
-    #                                    HTML('&nbsp;'),
-    #                                    "Capture Error Messages"),
-    #                                div(icon("cogs"),
-    #                                    HTML('&nbsp;'),
-    #                                    "Parallel Mode")),
-    #                              choiceValues = list("capture_error",
-    #                                                  "parallel"),
-    #                              selected = "parallel")),
     column(3, uiOutput("view_report")),
-    # column(3, offset = 6, actionButton("show_error", "Error Messages",
-    #                        icon = icon("exclamation-triangle"),
-    #                        style = ctmmweb:::STYLES$page_action)),
-    # column(12, br()),
-    # column(3, offset = 6, help_button("report"))
     column(3, offset = 6, help_button("app_options"))
-
-    # if (DEBUG_BUTTON) {
-    #   # debug mode, to inject browser in running. not sure if it will
-    #   column(3, actionButton("inject_debug", "Debug", icon = icon("bug")))
-    # },
-    # column(3, offset = if (DEBUG_BUTTON) 0 else 3, help_button("app_options"))
                                       ))
+# p1.b upload ----
 upload_box <- box(title = "Local Data Import",
                   # height = ctmmweb:::STYLES$height_data_import_box,
                   status = "info", solidHeader = TRUE, width = 12,
@@ -138,16 +123,125 @@ upload_box <- box(title = "Local Data Import",
                                   href = "https://www.movebank.org/node/13",
                                   style = "text-decoration: underline;"),
                                  # "Movebank Format",
+                         multiple = TRUE,
                          buttonLabel = "Browse or Drop...",
-                         placeholder = "csv or zip")),
-          column(12, fileInput("load_data", label = "Restore Progress",
+                         placeholder = "(multiple) csv or zip")),
+          column(6, fileInput("load_saved_data", label = "Restore Progress",
                                buttonLabel = "Browse or Drop...",
                                placeholder = "Previously saved zip"
-                           )),
-          column(5, offset = 7, help_button("import"))
+                           ))
            )
     )
-
+movebank_login_box <- box(title = "Movebank Login",
+                          status = "warning", solidHeader = TRUE, width = 6,
+                          # height = ctmmweb:::STYLES$height_movebank_login_box,
+                          fluidRow(
+                            column(12, br(), br(), br(), br()),
+                            column(12,
+                                  textInput("user", "User Name"), br(), br(),
+                                  passwordInput("pass", label = "Password")),
+                            column(12, br()),
+                            column(5, actionButton("login", "Login",
+                                          icon = icon("sign-in"),
+                                          style = ctmmweb:::STYLES$page_action)),
+                            column(5, offset = 2,
+                                  help_button("login"))
+                            # ,
+                            # column(12, br())
+                            ))
+movebank_studies_box <- box(title = "Movebank Studies",
+                                            collapsible = TRUE,
+                            status = "primary", solidHeader = TRUE, width = 12,
+      fluidRow(column(9, verbatimTextOutput("all_studies_stat")),
+               column(3, checkboxInput("data_manager",
+                                       "Only Show I'm Data Manager"))),
+      fluidRow(column(12, DT::DTOutput('studies'))))
+movebank_study_detail_box <- box(title = "Selected Study Detail",
+                                                 width = 12,
+                                 collapsible = TRUE,
+                                 status = "primary", solidHeader = TRUE,
+     fluidRow(column(3, actionButton("download_movebank",
+                                     "Download",
+                                     icon = icon("cloud-download"),
+                                     style = ctmmweb:::STYLES$page_action)),
+              column(4, offset = 1, uiOutput("open_study")),
+              column(3, offset = 1, help_button("download_movebank")
+                     )),
+     hr(),
+     fluidRow(column(12, DT::DTOutput("study_detail"))))
+movebank_study_preview_box <- box(title = "Selected Study Data",
+                                                  width = 12,
+                                  status = "primary", solidHeader = TRUE,
+                                  collapsible = TRUE,
+      fluidRow(column(3, downloadButton("save_movebank", "Save",
+                                        icon = icon("floppy-o"),
+                                        style = ctmmweb:::STYLES$download_button)),
+               column(3, offset = 6,
+                      actionButton("import_movebank", "Import",
+                                   icon = icon("arrow-right"),
+                                   style = ctmmweb:::STYLES$page_switch))),
+      hr(),
+      fluidRow(column(12, verbatimTextOutput("study_data_response"))),
+      fluidRow(column(12, DT::DTOutput('study_preview'))))
+=======
+# movebank_login_box <- box(title = "Movebank Login",
+#                           status = "warning", solidHeader = TRUE, width = 6,
+#                           # height = ctmmweb:::STYLES$height_movebank_login_box,
+#                           fluidRow(
+#                             column(12, br(), br(), br(), br()),
+#                             column(12,
+#                                   textInput("user", "User Name"), br(), br(),
+#                                   passwordInput("pass", label = "Password")),
+#                             column(12, br()),
+#                             column(5, actionButton("login", "Login",
+#                                           icon = icon("sign-in"),
+#                                           style = ctmmweb:::STYLES$page_action)),
+#                             column(5, offset = 2,
+#                                   help_button("login"))
+#                             ))
+# p1.c movebank studies ----
+movebank_studies_box <- box(title = "Movebank Studies", collapsible = TRUE,
+                            status = "warning", solidHeader = TRUE, width = 12,
+      fluidRow(
+        column(4, textInput("user", label = NULL, placeholder = "User Name")),
+        column(3, passwordInput("pass", label = NULL, placeholder = "Password")),
+        column(2, offset = 1, actionButton("login", "Login",
+                               icon = icon("sign-in"),
+                               style = ctmmweb:::STYLES$page_action)),
+        column(2, help_button("login"))
+      ),
+      fluidRow(column(9, verbatimTextOutput("all_studies_stat")),
+               column(3, checkboxInput("data_manager",
+                                       "Only Show I'm Data Manager"))),
+      fluidRow(column(12, DT::DTOutput('studies'))))
+movebank_study_detail_box <- box(title = "Selected Study Detail",
+                                                 width = 12,
+                                 collapsible = TRUE,
+                                 status = "primary", solidHeader = TRUE,
+     fluidRow(column(3, actionButton("download_movebank",
+                                     "Download",
+                                     icon = icon("cloud-download"),
+                                     style = ctmmweb:::STYLES$page_action)),
+              column(4, offset = 1, uiOutput("open_study")),
+              column(3, offset = 1, help_button("download_movebank")
+                     )),
+     hr(),
+     fluidRow(column(12, DT::DTOutput("study_detail"))))
+movebank_study_preview_box <- box(title = "Selected Study Data",
+                                                  width = 12,
+                                  status = "primary", solidHeader = TRUE,
+                                  collapsible = TRUE,
+      fluidRow(column(3, downloadButton("save_movebank", "Save",
+                                        icon = icon("floppy-o"),
+                                        style = ctmmweb:::STYLES$download_button)),
+               column(3, offset = 6,
+                      actionButton("import_movebank", "Import",
+                                   icon = icon("arrow-right"),
+                                   style = ctmmweb:::STYLES$page_switch))),
+      hr(),
+      fluidRow(column(12, verbatimTextOutput("study_data_response"))),
+      fluidRow(column(12, DT::DTOutput('study_preview'))))
+>>>>>>> upstream/master
 # p2. plots ----
 data_summary_box <- box(title = "1. Individuals",
                                         status = "info",
@@ -163,13 +257,13 @@ data_summary_box <- box(title = "1. Individuals",
       fluidRow(column(12, DT::DTOutput('individuals'))),
       br(),
       fluidRow(
-        # column(3, offset = 0, checkboxInput("time_in_sec",
-        #                                   ("Time in Seconds"),
-        #                                   value = FALSE)),
         column(3, offset = 0, actionButton("select_all", "Select All",
                                            icon = icon("check-square-o"),
                                            style = ctmmweb:::STYLES$page_action)),
-        column(3, offset = 6, actionButton("deselect_all",
+        column(3, offset = 2, downloadButton("export_rows",
+                                             "Export Current",
+                                             style = ctmmweb:::STYLES$download_button)),
+        column(3, offset = 1, actionButton("deselect_all",
                                            "Clear Selection",
                                            icon = icon("square-o"),
                                            style = ctmmweb:::STYLES$page_action))
@@ -187,10 +281,14 @@ location_plot_box <- tabBox(title = "Animal Locations",
             checkboxInput("overlay_all",
                           "Others in Background",
                           value = TRUE)),
-     column(4, offset = 3,
+     column(4, offset = 0,
             sliderInput("point_size_1", "Size of Points in Plot",
                         min = 0.05, max = 1, value = 0.1, step = 0.05,
-                        width = "100%"))
+                        width = "100%")),
+     column(3, offset = 1, br(), br(), actionButton("crop_loc_subset",
+                                        "Crop Subset",
+                                        icon = icon("crop"),
+                                        style = ctmmweb:::STYLES$page_action))
      ),
    plotOutput("location_plot_gg",
               dblclick = "location_plot_gg_dblclick",
@@ -216,32 +314,58 @@ location_plot_box <- tabBox(title = "Animal Locations",
                                width = "100%"))
             ),
            plotOutput("location_plot_individual",
-                      width = "99%", height = "100%"))
-  # tabPanel("4. Basic Plot", plotOutput("location_plot_basic"))
+                      width = "99%", height = "100%")),
+  tabPanel("5. Error",
+           fluidRow(
+             # column(8, h4("Device Errors")),
+             # column(12, verbatimTextOutput("error_summary")),
+             column(8, radioButtons("error_plot_mode",
+                                     label = "Plot With Device Error",
+                                     choices = c("Error Circle" = 1,
+                                                 "Error Disc" = 2,
+                                                 "Densities" = 3),
+                                     selected = 2, inline = TRUE)),
+             column(4, br(), help_button("device_error")),
+             column(12, plotOutput("error_plot"))),
+           fluidRow(
+             column(9, h5("Load Calibration Data")),
+             column(3, offset = 0, h5("Or input UERE")),
+             column(9, fileInput("cali_file", label = NULL, width = "100%")),
+             column(3, offset = 0, textInput("uere_text_input", label = NULL))
+           ),
+           fluidRow(
+             column(9, verbatimTextOutput("uere_print", placeholder = TRUE)),
+             column(3, offset = 0, actionButton("apply_uere",
+                                                "Apply To Current",
+                                                icon = icon("wrench"),
+                                                style = ctmmweb:::STYLES$page_action))
+           )
+             # column(12, hr()),
+             # column(12, h4("Set UERE Manually")),
+             #
+             # column(4, offset = 3, actionButton("apply_uere_manu",
+             #                        "Apply To Current",
+             #                        icon = icon("wrench"),
+             #                        style = ctmmweb:::STYLES$page_action))
+           )
   )
-histogram_facet_box <- box(title = "5. Sampling Time",
+histogram_facet_box <- box(title = "6. Sampling Time",
                            # height = ctmmweb:::STYLES$height_hist_box,
                            status = "primary", solidHeader = TRUE, width = 12,
                            plotOutput("histogram_facet",
                                       width = "99%", height = "100%"))
 # p3. outlier ----
-telemetry_error_box <- box(title = "Telemetry Errors",
-           status = "primary", solidHeader = TRUE, width = 12,
-           fluidRow(
-             column(5, offset = 1,
-                    textInput("device_error",
-                              "Standardized Device Error(meter)",
-                              value = "10"),
-                    h5("Example: GPS: 10, VHF: 100")),
-             column(2, offset = 4, br(), help_button("telemetry_errors"))
-             # ,
-             # column(3, offset = 3, br(),
-             #        actionButton("standarize_error",
-             #                     "Standarize Error",
-             #                     icon = icon("trash-o"),
-             #                     style = ctmmweb:::STYLES$page_action))
-           )
-)
+# telemetry_error_box <- box(title = "Telemetry Errors",
+#            status = "primary", solidHeader = TRUE, width = 12,
+#            fluidRow(
+#              column(5, offset = 1,
+#                     textInput("device_error",
+#                               "Standardized Device Error(meter)",
+#                               value = "10"),
+#                     h5("Example: GPS: 10, VHF: 100")),
+#              column(2, offset = 4, br(), help_button("telemetry_errors"))
+#            )
+# )
 outlier_filter_box <- tabBox(title = "Outlier Detection",
                        id = "outlier_filter_tabs", width = 12,
   # p3.a distance ----
@@ -328,9 +452,9 @@ outlier_filter_box <- tabBox(title = "Outlier Detection",
 all_removed_outliers_box <- box(title = "Removed Outliers",
                            status = "primary", solidHeader = TRUE, width = 12,
                fluidRow(
-                        column(3, offset = 9,
+                        column(4, offset = 8,
                                actionButton("reset_outliers",
-                                      "Reset All",
+                                      "Restore to Original",
                                       icon = icon("ban"),
                                       style = ctmmweb:::STYLES$page_action))
                         ),
@@ -397,7 +521,7 @@ selected_ranges_box <- box(title = "Time Range List",
                                        icon = icon("trash-o"),
                                        style = ctmmweb:::STYLES$page_action)),
                    column(3, offset = 0,
-                          actionButton("reset_time_sub", "Reset All",
+                          actionButton("clear_all_time_sub", "Clear All",
                                        icon = icon("ban"),
                                        style = ctmmweb:::STYLES$page_action)),
                    column(3, offset = 3,
@@ -416,7 +540,7 @@ vario_control_box <- tabBox(title = "Plot Controls",
       fluidRow(
         tags$head(tags$script(HTML(ctmmweb::JS.logify(3)))),
         tags$head(tags$script(HTML(ctmmweb::JS.onload("zoom_lag_fraction")))),
-        column(6, offset = 0, sliderInput("zoom_lag_fraction",
+        column(5, offset = 0, sliderInput("zoom_lag_fraction",
                                           "Fraction of Time-lag Range",
                                           min = -3, max = 0, step = 0.01,
                                           value = log10(0.5))),
@@ -426,7 +550,7 @@ vario_control_box <- tabBox(title = "Plot Controls",
                                                        "Relative" = "relative"),
                                            selected = "relative",
                                            inline = FALSE)),
-        column(2, offset = 0, br(), numericInput("vario_height",
+        column(3, offset = 0, br(), numericInput("vario_height",
                                            "Figure Height",
                                            value = 500, min = 50, max = 800,
                                            step = 50)),
@@ -438,30 +562,40 @@ vario_control_box <- tabBox(title = "Plot Controls",
 # # p5.a.2 multiple schedules ----
 tabPanel("Schedule",
       fluidRow(
-        column(12, h4(shiny::a("Multiple Sampling Schedules",
+        column(6, h4(shiny::a("Multiple Sampling Schedules",
                                target = "_blank",
                                href = "https://ctmm-initiative.github.io/ctmm/articles/variogram.html#irregular-sampling-schedules",
                                style = "text-decoration: underline;"))),
+        # optional kmeans detection --
+        column(4, offset = 0, checkboxInput("enable_kmeans",
+                                            div(style = "color:#f39c12;",
+                                                "Auto detect with kmeans"),
+                                value = FALSE, width = "100%")),
+        column(2, help_button("vario_schedule"))),
+      fluidRow(column(12, uiOutput("kmeans_extra_ui")),
+               column(12, hr())),
+      # adding intervals --
+      fluidRow(
         # choices updated in server side
-        column(5, selectInput("vario_dt_ids", label = "Identities",
+        column(5, selectInput("vario_intervals_ids", label = "Identities",
                               choices = NULL, multiple = TRUE)),
-        column(3, textInput("vario_dt", label = "Intervals",
+        column(3, textInput("vario_intervals", label = "Intervals",
                             placeholder = "comma separated")),
-        column(2, selectInput("vario_dt_unit", label = "Time Unit",
+        column(2, selectInput("vario_intervals_unit", label = "Time Unit",
                               choices = c("second", "minute", "hour", "day"),
                               selected = "hour")),
         column(2, div(br(), style = "line-height: 180%;"),
-               actionButton("add_vario_dt", "Add",
+               actionButton("add_vario_intervals", "Add",
                                icon = icon("angle-double-down"),
                                style = ctmmweb:::STYLES$page_action))),
       fluidRow(
         column(12, h4("Added Schedules")),
-        column(12, DT::DTOutput("vario_dt_table"), br()),
-        column(3, offset = 0, actionButton("remove_row_vario_dt",
+        column(12, DT::DTOutput("vario_intervals_table"), br()),
+        column(3, offset = 0, actionButton("remove_row_vario_intervals",
                                            "Remove Selected",
                                            icon = icon("trash-o"),
                                            style = ctmmweb:::STYLES$page_action)),
-        column(3, offset = 6, actionButton("reset_vario_dt", "Reset All",
+        column(3, offset = 6, actionButton("reset_vario_intervals", "Reset All",
                                icon = icon("ban"),
                                style = ctmmweb:::STYLES$page_action))
       )),
@@ -487,43 +621,76 @@ tabPanel("Pool",
         )
 )
 # p5.b variograms ----
+ctmm_colors <- ctmmweb:::CTMM_colors
 variograms_box <- tabBox(title = "Variograms", id = "vario_tabs", width = 12,
-     tabPanel(div(icon("battery-empty"), "1. Empirical"), value = "1",
+     tabPanel(div(icon("battery-half"), "1. Empirical"), value = "1",
               fluidRow(
-                column(2, offset = 10, help_button("variograms")),
-                column(12, br(), plotOutput("vario_plot_1",
+                column(4, div(style = ctmmweb:::STYLES$align_up_group,
+              checkboxGroupInput("guess_curve_selector",
+              label = NULL, inline = FALSE,
+              choiceNames = list(div(style = paste0("color:", ctmm_colors[1]),
+                                     "Original Guesstimate"),
+                                 div(style = paste0("color:", ctmm_colors[2]),
+                                     "Current Guesstimate")),
+              choiceValues = names(ctmm_colors)[1:2],
+              selected = names(ctmm_colors)[1:2])
+              )
+                       ),
+                column(3, offset = 0, ctmmweb:::tuneSelectorUI("guess")),
+                column(3, div(style = ctmmweb:::STYLES$align_up,
+                       checkboxInput("guess_error_on", "Turn on error"))),
+                column(2, offset = 0, help_button("variograms"))),
+              fluidRow(
+                column(12, br(), plotOutput("vario_plot_empirical",
                                              width = "99%", height = "98%"))
               )
      ),
-     tabPanel(div(icon("battery-half"), "2. Guesstimate"),
-              fluidRow(
-                column(3, offset = 0, uiOutput("tune_selector")),
-                column(12, plotOutput("vario_plot_2",
-                                      width = "99%", height = "98%"))
-              )
-     ),
-     tabPanel(div(icon("hourglass-start"), icon("battery-full"), "3. Modeled"),
+     tabPanel(div(icon("hourglass-start"), icon("battery-full"), "2. Modeled"),
       fluidRow(
-        # column(3, offset = 0, actionButton("try_models", "Try Models",
-        #                              icon = icon("hourglass-start"),
-        #                              style = ctmmweb:::STYLES$page_action),
-        #        br(), br()),
-        column(2, offset = 10, help_button("model_selection")),
-        column(12, plotOutput("vario_plot_3",
-                              width = "99%", height = "98%")),
-        # model selection table
-        column(12, hr()),
-        column(3, actionButton("select_1st_models", "Select Best Models",
-                               icon = icon("square-o"),
+        # model summary/selection table --
+        # refit tool row
+        column(3, offset = 0, actionButton("refit", "Refit",
+                                           icon = icon("undo"),
+                                           style = ctmmweb:::STYLES$page_action)),
+        # adjust radiobutton vertical alignment, only change this for now. if need to change for all radiobuttons, use styles.css
+        column(3, div(style = ctmmweb:::STYLES$align_up,
+                    checkboxInput("refit_tuned_only", label = "Fine-tuned Only")
+              )),
+        column(3, offset = 3, actionButton("remove_bad_models",
+                                           "Clean Up",
+                               icon = icon("trash-o"),
                                style = ctmmweb:::STYLES$page_action)),
-        column(4, offset = 1, checkboxInput("hide_ci_model",
-                                "Hide Confidence Intervals")),
-        column(3, offset = 1, actionButton("clear_models", "Clear Selection",
-                               icon = icon("square-o"),
-                               style = ctmmweb:::STYLES$page_action)),
-        # column(2, offset = 3, help_button("model_selection")),
+        column(12, DT::DTOutput("tried_models_summary")),
+        # selection tool row
         column(12, br()),
-        column(12, DT::DTOutput("tried_models_summary"))
+        column(3, actionButton("select_1st_models", "Select Best",
+                               icon = icon("check-square-o"),
+                               style = ctmmweb:::STYLES$page_action)),
+        column(4, offset = 0, div(style = ctmmweb:::STYLES$align_up,
+                                  checkboxInput("hide_ci_model",
+                                                "Hide Confidence Intervals"))),
+        column(3, offset = 2, actionButton("clear_models", "Clear Selection",
+                                           icon = icon("square-o"),
+                                           style = ctmmweb:::STYLES$page_action)),
+        # column(12, hr()),
+        # model variograms --
+        column(12, hr()),
+        column(4, div(style = ctmmweb:::STYLES$align_up_group,
+                      checkboxGroupInput("model_curve_selector",
+             label = NULL, inline = FALSE,
+             choiceNames = list(div(style = paste0("color:", ctmm_colors[3]),
+                                    "Initial Parameter"),
+                                div(style = paste0("color:", ctmm_colors[4]),
+                                    "Fitted Model Result"),
+                                div(style = paste0("color:", ctmm_colors[5]),
+                                    "Current Model Result")),
+             choiceValues = names(ctmm_colors)[3:5],
+             selected = names(ctmm_colors)[3:5]))
+        ),
+        column(5, offset = 1, br(), ctmmweb:::tuneSelectorUI("model")),
+        column(2, offset = 0, help_button("model_selection")),
+        column(12, plotOutput("vario_plot_modeled",
+                              width = "99%", height = "98%"))
       )
      ))
 # p6. home range ----
@@ -548,40 +715,32 @@ range_plot_box <- box(title = "Home Range Estimation",
                   selected = c("contour",
                                "interval",
                                "location"))),
-     column(5, offset = 0,
+     column(5, offset = 1,
             textInput("hr_contour_text",
                       "Home Range Contours in %",
                       value = "95")),
-     column(2, offset = 1, br(),
+     column(2, offset = 0, br(),
             actionButton("export_homerange_dialog", "Export",
                             icon = icon("save"),
                             style = ctmmweb:::STYLES$page_action))),
     fluidRow(
-     # column(12, uiOutput("hrange_weight_ui")),
-     column(10, selectInput("hrange_weight",
-                           label = h4(
-                             # HTML('&nbsp;'),
-                             #           HTML('&nbsp;'),
-                             #           HTML('&nbsp;'),
-                                       icon("balance-scale"),
-                             shiny::a("Optimal Weighting",
-                                      target = "_blank",
-                                      href = "https://ctmm-initiative.github.io/ctmm/articles/akde.html",
-                                      style = "text-decoration: underline;")),
+      column(4, h4(icon("balance-scale"),
+                                      shiny::a("Optimal Weighting",
+                                        target = "_blank",
+                                        href = "https://ctmm-initiative.github.io/ctmm/articles/akde.html",
+                                        style = "text-decoration: underline;"))),
+      column(3, offset = 1, checkboxInput("hrange_weight_all", "Enable All"))),
+    fluidRow(
+     column(10, selectInput("hrange_weight", label = NULL,
+                           # label = h4(icon("balance-scale"),
+                           #            shiny::a("Optimal Weighting",
+                           #              target = "_blank",
+                           #              href = "https://ctmm-initiative.github.io/ctmm/articles/akde.html",
+                           #              style = "text-decoration: underline;")),
                            choices = NULL, multiple = TRUE)),
-     # [add more vertical spaces](https://stackoverflow.com/questions/1409649/how-to-change-the-height-of-a-br)
-     column(2,
-            div(br(), br(), style = "line-height: 160%;"
-                ),
-            actionButton("apply_hrange_weight", "Apply",
+     column(2, actionButton("apply_hrange_weight", "Apply",
                             icon = icon("angle-double-down"),
                             style = ctmmweb:::STYLES$page_action))),
-   # fluidRow(
-   #   column(12, h4("Added Optimal Weightings")),
-   #   column(10, verbatimTextOutput("hrange_weight_list")),
-   #   column(2, offset = 0, actionButton("reset_hrange_weight_list", "Reset",
-   #                                      icon = icon("ban"),
-   #                                      style = ctmmweb:::STYLES$page_action))),
    fluidRow(
      column(12, plotOutput("range_plot",
                                   # less than 100%, otherwise out of boundary
@@ -590,9 +749,7 @@ range_summary_box <- box(title = "Home Range Summary",
                                          status = "primary",
                       solidHeader = TRUE, width = 12,
                       fluidRow(
-                        column(4, checkboxInput("hide_ci_hrange",
-                                                "Hide Confidence Intervals")),
-                        column(2, offset = 6, help_button("home_range")),
+                        column(2, offset = 10, help_button("home_range")),
                         column(12, DT::DTOutput("range_summary"))
                         )
 )
@@ -620,7 +777,7 @@ overlap_plot_box <- tabBox(title = "Plot", id = "overlap_tabs", width = 12,
                      column(12,
                              plotOutput("overlap_plot_value_range",
                                         width = "99%", height = "100%")))),
-          tabPanel("Home Range",
+          tabPanel("Pairwise Plots",
            fluidRow(
              column(4, checkboxGroupInput("overlap_hrange_option", label = NULL,
                           choiceNames = list(div(icon("circle-o"),
@@ -774,10 +931,10 @@ body <- dashboardBody(
   # match menuItem
   tabItems(
     # tabItem(tabName = "intro", fluidPage(includeMarkdown("help/workflow1.md"))),
-    shinydashboard::tabItem(tabName = "import",
+    tabItem(tabName = "import",
             fluidRow(app_options_box,
                      upload_box)),
-    shinydashboard::tabItem(tabName = "plots",
+    tabItem(tabName = "plots",
             fluidRow(data_summary_box,
                      location_plot_box,
                      histogram_facet_box
@@ -788,7 +945,7 @@ body <- dashboardBody(
                      selected_plot_box,
                      selected_ranges_box)),
     tabItem(tabName = "filter",
-            fluidRow(telemetry_error_box, outlier_filter_box,
+            fluidRow(outlier_filter_box,
                      all_removed_outliers_box)),
     tabItem(tabName = "model",
             fluidRow(vario_control_box, variograms_box
