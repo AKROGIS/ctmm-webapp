@@ -537,7 +537,7 @@ output:
     req(input$tele_file)
     # LOG file upload. need to be outside of import_tele_to_app function because that only have the temp file path, not original file name. thus always call import_tele function with separate log msg line.
     log_msg("Importing file", input$tele_file$name)
-    import_as_telemetry(input$tele_file$datapath)
+    import_tele_to_app(input$tele_file$datapath)
   })
   # observe radio button changes
   observeEvent(input$load_option, {
@@ -590,19 +590,13 @@ output:
              data("WRST_Caribou")
              update_input_data(WRST_Caribou)
            },
-           #ctmm = {
-           #  data("buffalo", package = "ctmm", envir = environment())
-             # LOG use buffalo
-           #  log_msg("Using data", "buffalo from ctmm")
-           #  update_input_data(buffalo)
-           #},
            upload = {
              # the radiobutton itself doesn't upload, just reuse previously uploaded file if switched back.
              # need to check NULL input from source, stop error in downstream
              req(input$tele_file)
              # LOG file upload.
              log_msg("Importing file", input$tele_file$name)
-             import_as_telemetry(input$tele_file$datapath)
+             import_tele_to_app(input$tele_file$datapath)
            })
   })
   callModule(click_help, "import", title = "Data Import Options", size = "l",
