@@ -183,7 +183,6 @@ movebank_study_preview_box <- box(title = "Selected Study Data",
       hr(),
       fluidRow(column(12, verbatimTextOutput("study_data_response"))),
       fluidRow(column(12, DT::DTOutput('study_preview'))))
-=======
 # movebank_login_box <- box(title = "Movebank Login",
 #                           status = "warning", solidHeader = TRUE, width = 6,
 #                           # height = ctmmweb:::STYLES$height_movebank_login_box,
@@ -241,7 +240,6 @@ movebank_study_preview_box <- box(title = "Selected Study Data",
       hr(),
       fluidRow(column(12, verbatimTextOutput("study_data_response"))),
       fluidRow(column(12, DT::DTOutput('study_preview'))))
->>>>>>> upstream/master
 # p2. plots ----
 data_summary_box <- box(title = "1. Individuals",
                                         status = "info",
