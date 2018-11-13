@@ -325,6 +325,9 @@ output:
   par_occur_mem <- memoise::memoise(
     ctmmweb::par_occur,
     cache = memoise::cache_filesystem(cache_path))
+  par_speed_mem <- memoise::memoise(
+    ctmmweb:::par_speed,
+    cache = memoise::cache_filesystem(cache_path))
   # a safety check for data intergrity when turned on. will run after every modification on data and list separately. i.e. values$data$tele_list changes, or data not coming from combine. this should got run automatically? no if not referenced. need reactive expression to refer values$.
   # this is a side effect reactive expression that depend on a switch.
   verify_global_data <- reactive({
@@ -1151,14 +1154,14 @@ output:
     # we need to modify the values variable, not the select_data copy
     # each item get updated, but uere on list return NULL. is calibrated also didn't return true after update.
     # if input box has content, use input box. otherwise use loaded calibration data.
-    if (input$uere_text_input == "") {
+    if (input$uere_num_input == 0) {
       values$cali_uere <- ctmm::uere.fit(req(values$cali_tele_list))
     } else {
       # uere is always a named vector. after parsing the name is lost, need to restore it, otherwise new uere was not named properly
-      # values$cali_uere <- c(horizontal = req(ctmmweb:::parse_num_text_input(
-      #   input$uere_text_input)))
-      values$cali_uere <- req(ctmmweb:::parse_num_text_input(
-        input$uere_text_input))
+      # values$cali_uere <- req(ctmmweb:::parse_num_text_input(
+      #   input$uere_text_input))
+      # somehow int 10 will not be applied by uere.
+      values$cali_uere <- as.numeric(input$uere_num_input)
     }
     # uere_by_input <- c(horizontal = req(ctmmweb:::parse_num_text_input(
     #   input$uere_text_input)))
@@ -2187,7 +2190,7 @@ output:
     # not the best measure to detect data inconsistency but the simplest. rely on select_data to switch tab, make sure go through 1st tab first.
     req(length(select_data()$tele_list) ==
           length(values$selected_data_guess_list))
-    tele_guess_list <- ctmmweb::align_2_list(select_data()$tele_list,
+    tele_guess_list <- ctmmweb::align_lists(select_data()$tele_list,
                                            values$selected_data_guess_list)
     # LOG try models
     log_msg("Trying different models...")
@@ -2218,7 +2221,7 @@ output:
     # the model summary table to be shown, so it's formated. note each model has 3 rows here for CI values -- now become single row table
     summary_dt <- ctmmweb:::model_list_dt_compared_to_summary_dt(
       req(values$model_list_dt))
-    summary(values$model_list_dt[4, model][[1]]) # not unit problem
+    # summary(values$model_list_dt[4, model][[1]]) # not unit problem
     # hide ci now hide ci columns, not rows
     if (input$hide_ci_model) {
       # summary_dt <- summary_dt[!stringr::str_detect(estimate, "CI")]
@@ -2278,13 +2281,6 @@ output:
                       color = DT::styleEqual(info_p$identity,
                                              scales::hue_pal()(nrow(info_p)))
       )
-    # %>%
-    #   # override the low/high cols with background
-    #   DT::formatStyle('estimate', target = 'row',
-    #                   backgroundColor = DT::styleEqual(
-    #                     c("CI low", "ML" , "CI high"),
-    #                     c("#FFFFFF", "#F7F7F7", "#F2F2F2"))
-    #   )
   }
   output$tried_models_summary <- DT::renderDT({
     # should not need to use req on reactive expression if that expression have req inside.
@@ -2321,13 +2317,6 @@ output:
   #   cat(input$tried_models_summary_rows_selected, "\n")
   # })
   select_models <- reactive({
-    # change signal variable so that overlap table rows should not be used now. this is similar to the clear row selection action in try models
-    # overlap_table_ready <- FALSE
-    # DT::selectRows(proxy_overlap_dt, list())
-    # req(!is.null(values$selected_data_model_try_res))
-    # req(length(input$tried_models_summary_rows_selected) > 0)
-    # input$tried_models_summary_cell_clicked
-    # cat(input$tried_models_summary_rows_selected, "\n")
     # sort the rows selected so same individual models are together
     rows_selected_sorted <- sort(req(input$tried_models_summary_rows_selected))
     # previous model selection value may still exist
@@ -2410,7 +2399,7 @@ output:
     } else {
       tele_list <- select_models()$tele_list[refit_dt$to_refit]
       init_ctmm_list <- refit_dt[(to_refit), model_current]
-      tele_guess_list <- ctmmweb::align_2_list(tele_list,
+      tele_guess_list <- ctmmweb::align_lists(tele_list,
                                              init_ctmm_list)
       # LOG try models
       log_msg("Refitting models...")
@@ -2516,15 +2505,10 @@ output:
     dt <- ctmmweb:::hrange_list_dt_to_formated_range_summary_dt(hrange_list_dt,
                                                                 get_hr_levels())
     # remove extra columns to save space
-    # dt[, model_no := NULL]
     dt[, model_name := NULL]
     setnames(dt, "model_no", "no")
     # LOG home range summary
     log_dt_md(dt, "Home Range Summary")
-    # if (input$hide_ci_hrange) {
-    #   dt <- dt[!stringr::str_detect(estimate, "CI")]
-    #   # dt[, estimate := NULL]
-    # }
     info_p <- values$data$merged$info
     # still use the full model type table color mapping to make it consistent.
     model_types <- stringr::str_sort(unique(
@@ -2785,42 +2769,6 @@ output:
     log_save_UD("Overlap of Home Range")
   }, height = function() {choose_overlap_pairs()$overlap_hrange_layout$height},
      width = "auto")
-  # tried with plot/DT priority to make it update after DT. didn't work, maybe it's only render order, but data change already, still will render with updated data.
-  # outputOptions(output, "overlap_plot_hrange", priority = 1)
-  # # ovrelap locations (disabled) ----
-  # # plot using row selection value of table, when data updated, both table and plot start to update but plot can use exsiting old row selection value which is either wrong or doesn't exist in new table. freeze row selection value in table code to make sure the access here is only thawed after all other reactive finish
-  # overlap_plot_location_range <- add_zoom("overlap_plot_location")
-  # output$overlap_plot_location <- renderPlot({
-  #   animals_dt <- req(select_models()$data_dt)
-  #   # show overview when no rows selected
-  #   if (length(input$overlap_summary_rows_selected) == 0) {
-  #     # no global data overlay in background
-  #     g <- ctmmweb::plot_loc(animals_dt, loc_data = NULL, input$point_size_1) +
-  #       ggplot2::coord_fixed(xlim = overlap_plot_location_range$x,
-  #                            ylim = overlap_plot_location_range$y)
-  #   } else {# show grouped plot of pairs when rows selected
-  #     # because data.table modify by reference, the plot code actually added selected column already, but we use the selection number directly and not relying on this.
-  #     selected_pairs_current_order <- select_models_overlap()$dt[
-  #       select_rows_in_current_order(), .(v1, v2)]
-  #     # usling lapply like a loop, so we don't need to initialize the list
-  #     g_list <- lapply(1:nrow(selected_pairs_current_order), function(i) {
-  #       # warning of drawing plot on empty data, not error
-  #       suppressWarnings(
-  #         ctmmweb::plot_loc(select_models()$data_dt[
-  #           identity %in% selected_pairs_current_order[i]])
-  #       )
-  #     })
-  #     g <- gridExtra::grid.arrange(grobs = g_list,
-  #                                  ncol = input$overlap_loc_columns)
-  #   }
-  #   # LOG save plot
-  #   log_save_ggplot(g, "overlap_plot_location")
-  # },
-  # # changing canvas and column sometimes doesn't cause update, switching tabs will update. try this parameter, seemed better.
-  # execOnResize = TRUE,
-  # height = function() { input$overlap_loc_height }, width = "auto")
-  # # tried to use priority to make sure location plot update after table update, didn't work, probably because the problem is row selection reset happened slower
-  # # outputOptions(output, "overlap_plot_location", priority = 1)
   # p8. occurrence ----
   callModule(click_help, "occurrence", title = "Occurrence Distribution",
              size = "l", file = "help/8_occurrence.md")
@@ -2833,9 +2781,6 @@ output:
                            select_models()$model_list,
                            parallel = input_value("parallel")))),
                  message = "Calculating Occurrence ...")
-    # if (input_value("log_error")) {
-    #   output$occurrence_info <- renderPrint(str(res))
-    # }
     # add name so plot can take figure title from it
     # # used to be model name, changed to display name. both the plot title and overlap result matrix names come from this.
     names(res) <- select_models()$info_dt$display_name
@@ -2858,9 +2803,153 @@ output:
     log_save_UD("occurrence")
     # graphics::par(def.par)
   }, height = function() { select_models()$vario_layout$height })
-  # p9. map ----
+  # p9. speed ----
+  callModule(click_help, "estimate_speed", title = "Estimate Average Speed",
+             size = "l", file = "help/9_estimate_speed.md")
+  # select_models_estimate_speed() ----
+  select_models_estimate_speed <- reactive({
+    # take parameters
+    selected_models <- select_models()$model_list
+    selected_tele <- select_models()$tele_list
+    selected_model_list_dt <- select_models()$model_list_dt
+    para_list <-
+      ctmmweb::align_lists(
+        selected_models, selected_tele,
+        rep_len(input$estimate_speed_level / 100,
+                length.out = length(selected_models)),
+        rep_len(input$estimate_speed_robust,
+                length.out = length(selected_models))
+    )
+    # LOG estimating speed
+    log_msg("Estimating speed...")
+    withProgress(print(system.time(
+      res <- par_speed_mem(para_list, parallel = input_value("parallel")))),
+      message = "Simulating animal's trajectory and estimate the average speed ...")
+    # also calculation duration, distance traveled
+    durations_dt <-
+      select_models()$data_dt[, .(duration = max(t, na.rm = TRUE) -
+                                    min(t,na.rm = TRUE)),
+                             by = identity]
+    durations <- durations_dt[names(selected_tele), duration, on = .(identity)]
+    res_dt <- ctmmweb:::speed_res_to_dt(res, durations)
+    # add model info columns: model type, identity, model name, color
+    dt <- cbind(
+      selected_model_list_dt[, .(model_no, identity, model_type,
+                                 model_name, display_name, model_color)],
+      res_dt)
+    # return a dt
+    return(dt)
+  })
+  # common rendering code
+  render_speed_distance_DT <- function(table_dt) {
+    # formatting style is similar to home range table/model summary table
+    info_p <- values$data$merged$info
+    # still use the full model type table color mapping to make it consistent.
+    model_types <- stringr::str_sort(
+      unique(summary_models()$summary_dt$model_type))
+    render_model_summary_DT(table_dt, model_types, info_p, NULL)
+  }
+  # speed table ----
+  output$estimate_speed_table <- DT::renderDT({
+    # the speed column name could vary so use column index here
+    # model_no, identity, model_type, speed, speed CI
+    # table_dt <- select_models_estimate_speed()[, c(1:3, 8, 10)]
+    dt <- select_models_estimate_speed()
+    speed_col_name <- stringr::str_subset(names(dt), "speed \\(")
+    speed_CI_col_name <- stringr::str_subset(names(dt), "speed CI \\(")
+    table_dt <- dt[, c("model_no", "identity", "model_type",
+                       speed_col_name, speed_CI_col_name), with = FALSE]
+    # LOG speed result, log here because the table is better suited for log than dt
+    log_dt_md(table_dt, "Estimated Speed")
+    render_speed_distance_DT(table_dt)
+  })
+  # distance table ----
+  output$estimate_distance_table <- DT::renderDT({
+    # the speed column name could vary so use column index here
+    # model_no, identity, model_type, speed, speed CI
+    # table_dt <- select_models_estimate_speed()[, c(1:3, 8, 10)]
+    dt <- select_models_estimate_speed()
+    duration_col_name <- stringr::str_subset(names(dt), "duration \\(")
+    distance_col_name <- stringr::str_subset(names(dt), "distance_traveled \\(")
+    distance_CI_col_name <- stringr::str_subset(names(dt),
+                                                "distance_traveled CI \\(")
+    table_dt <- dt[, c("model_no", "identity", "model_type", duration_col_name,
+                       distance_col_name, distance_CI_col_name), with = FALSE]
+    # LOG speed result, log here because the table is better suited for log than dt
+    log_dt_md(table_dt, "Estimated Distance Traveled")
+    render_speed_distance_DT(table_dt)
+  })
+  # speed plot ----
+  # just sort plot with table, plus selection highlight
+  output$estimate_speed_plot <- renderPlot({
+    dt <- select_models_estimate_speed()
+    # need to wait until table is finished, use current page.
+    current_order <- dt[rev(req(input$estimate_speed_table_rows_current)), model_name]
+    # want to show all values if just selected rows, but update with filter. rows_all update with filter, plot use limits to filter them. selected rows only update a column and change color. this is different from the other 2 tab.
+    # rely on column position here, otherwise need to be string pattern, both not ideal. add backtick to quote, thus after unquote it will be valid name
+    speed_col_name_ticked <- ctmmweb:::get_ticked_col_name(names(dt),
+                                                           "speed \\(")
+    dt[, selected := FALSE]
+    dt[input$estimate_speed_table_rows_selected, selected := TRUE]
+    g <- ggplot2::ggplot(dt, ggplot2::aes_string(x = speed_col_name_ticked,
+                                                 y = "model_name",
+                                                 color = "selected")) +
+      # make plot sync with table sort and filtering
+      ggplot2::scale_y_discrete(limits = current_order) +
+      # na.rm in point, text, errorbar otherwise will warning in filtering
+      {if (input$show_estimate_plot_label) {
+        ggplot2::geom_text(ggplot2::aes_string(label = speed_col_name_ticked),
+                           hjust = 0, vjust = -0.5, na.rm = TRUE)}} +
+      {if (input$show_estimate_ci) {
+        ggplot2::geom_errorbarh(ggplot2::aes(xmin = low, xmax = high),
+                                size = 0.45, height = 0.35, na.rm = TRUE,
+                                show.legend = FALSE)
+      }} +
+      ggplot2::geom_point(color = "blue", size = 2, na.rm = TRUE) +
+      # ggplot2::guides(color = FALSE) +
+      ggplot2::scale_colour_manual(values = c("cornflowerblue", "hotpink")) +
+      ctmmweb:::BIGGER_THEME
+    # LOG save pic
+    log_save_ggplot(g, "estimate_speed_value_range")
+  }, height = function() { input$estimate_plot_height }, width = "auto"
+  )
+  # distance plot ----
+  output$estimate_distance_plot <- renderPlot({
+    dt <- select_models_estimate_speed()
+    dt[, label := paste0(model_no, ".", identity)]
+    dt <- dt[req(input$estimate_distance_table_rows_current)]
+    duration_col_name_ticked <- ctmmweb:::get_ticked_col_name(names(dt), "duration \\(")
+    distance_col_name_ticked <- ctmmweb:::get_ticked_col_name(names(dt),
+                                                    "distance_traveled \\(")
+    dt[, selected := FALSE]
+    dt[input$estimate_distance_table_rows_selected, selected := TRUE]
+    g <- ggplot2::ggplot(dt, ggplot2::aes_string(x = duration_col_name_ticked,
+                                                 y = distance_col_name_ticked,
+                                                 color = "selected")) +
+      # na.rm in point, text, errorbar otherwise will warning in filtering
+      {if (input$show_estimate_plot_label) {
+        # ggplot2::geom_text(ggplot2::aes(label = label),
+        #                    vjust = -0.5, na.rm = TRUE, show.legend = FALSE)
+        ggrepel::geom_text_repel(ggplot2::aes(label = label), hjust = 0,
+                                 na.rm = TRUE, show.legend = FALSE)
+        }} +
+      {if (input$show_estimate_ci) {
+        ggplot2::geom_errorbar(
+          ggplot2::aes(ymin = distance_traveled_low,
+                       ymax = distance_traveled_high),
+          size = 0.45, width = 0.35)
+      }} +
+      ggplot2::geom_point(color = "blue", size = 2, na.rm = TRUE) +
+      # ggplot2::guides(color = FALSE) +
+      ggplot2::scale_colour_manual(values = c("cornflowerblue", "hotpink")) +
+      ctmmweb:::BIGGER_THEME
+    # LOG save pic
+    log_save_ggplot(g, "estimate_duration_distance")
+  }, height = function() { input$estimate_plot_height }, width = "auto"
+  )
+  # p10. map ----
   callModule(click_help, "map", title = "Map",
-             size = "l", file = "help/9_map.md")
+             size = "l", file = "help/10_map.md")
   MAP_NAME_BY_TAB <- list(Point = "point_map", Heatmap = "heat_map")
   CURRENT_map_path <- list(Point = NULL, Heatmap = NULL)
   # save map to html, record html path in CURRENT_map_path. this is used in log save, and download map button.
@@ -2881,15 +2970,7 @@ output:
     # record the latest file path
     CURRENT_map_path[[map_type]] <<- map_path
   }
-  # shared basemap
-  # tiles_info <- list(here = c("HERE.terrainDay", "HERE.satelliteDay",
-  #                             "HERE.hybridDay"),
-  #                    open = c("OpenTopoMap",
-  #                             "Esri.WorldTopoMap", "Esri.WorldImagery"),
-  #                    here_app_id = 'ehftALetcOLjvopsXsZP',
-  #                    here_app_code = 'a5oE5ewb0eH9ojahDBLUzQ'
-  # )
-  # used for both point and heat map
+  # shared basemap used for both point and heat map
   basemap <- ctmmweb::base_map()
   # use dynamic UI so we can adjust map height
   output$point_map_holder <- renderUI(
@@ -2956,10 +3037,6 @@ output:
     ))
     return(leaf)
   })
-  # output$cluster_map_holder <- renderUI(
-  #   leaflet::leafletOutput("cluster_map",
-  #                 height = input$map_height)
-  # )
   # need a history list of tabs, from tab switching and page switching
   # values$map_tab_history <- NULL
   # first map page view ----
@@ -2980,26 +3057,8 @@ output:
     }
   })
   # map tab switching ----
-  # for debug: print current values when clicked on map
-  # observeEvent(input$heat_map_click, {
-  #   cat("heatmap\n")
-  #   print(input$heat_map_zoom)
-  #   print(unlist(input$heat_map_bounds))
-  # })
-  # observeEvent(input$point_map_click, {
-  #   cat("points\n")
-  #   print(input$point_map_zoom)
-  #   print(unlist(input$point_map_bounds))
-  # })
   # ~set new tab map bounds/zoom to value of previous tab~ just apply heatmap bounds to point if enabled
   observeEvent(input$map_tabs, {
-    # values$map_tab_history$previous <- values$map_tab_history$current
-    # values$map_tab_history$current <- input$map_tabs
-    # # print(values$map_tab_history)
-    # cat(input$map_tabs, "\n")
-    # the map bounds may not be updated yet in map initialization. only access the previous map bounds after switching, that should be up to date.
-    # cat("heatmap: ", unlist(input$heat_map_bounds), "\n")
-    # cat("pointmap: ", unlist(input$point_map_bounds), "\n")
     if (input$apply_heat_to_point && (input$map_tabs == "Point")) {
       leaflet::leafletProxy("point_map", session) %>%
         ctmmweb:::apply_bounds(input$heat_map_bounds)
@@ -3033,7 +3092,7 @@ output:
       file.copy(CURRENT_map_path[[input$map_tabs]], file)
     }
   )
-  # p10. report ----
+  # p11. report ----
   # save data ----
   output$save_data <- downloadHandler(
     filename = function() {
@@ -3049,8 +3108,13 @@ output:
         log_msg("Saving Data")
         # pack and save cache
         cache_zip_path <- ctmmweb::zip_folder(cache_path, "cache.zip")
-        saved_rds_path <- file.path(session_tmpdir, "data.rds")
-        saveRDS(values$data, file = saved_rds_path)
+        saveRDS(values$data,
+                file = file.path(session_tmpdir, "data.rds"))
+        saveRDS(values$input_tele_list,
+                file = file.path(session_tmpdir, "input_telemetry.rds"))
+        # model fit result. try_models fit first round, refit fit another round, full data in model_list_dt and list columns. have to save this table.
+        saveRDS(values$model_list_dt,
+                file = file.path(session_tmpdir, "model_list_dt.rds"))
         # LOG save current telemetry data as csv so it can be imported easier. Only do this in generated report, not in the process to avoid too frequent saves.
         log_dt_md(values$data$merged$info,
                   "Current Telemetry Data")
@@ -3102,9 +3166,10 @@ output:
     reset_cache(cache_path)
     # using hard coded file name, need to search all usage when changed. cache.zip have cache folder inside it, so need to extract one level up
     utils::unzip(file.path(session_tmpdir, "cache.zip"), exdir = session_tmpdir)
-    loaded_data <- readRDS(file.path(session_tmpdir, "data.rds"))
     # restore variables, also need to update id_pal, which are outside of data thus not restored, but it need to be built.
-    values$data <- loaded_data
+    values$input_tele_list <- readRDS(file.path(
+      session_tmpdir, "input_telemetry.rds"))
+    values$data <- readRDS(file.path(session_tmpdir, "data.rds"))
     values$id_pal <- ctmmweb:::build_id_pal(values$data$merged$info)
     shinydashboard::updateTabItems(session, "tabs", "plots")
   })

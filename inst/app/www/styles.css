@@ -11,7 +11,7 @@
 
 /* side bar numeric input, matching style to side bar. */
 #plot_dpi {
-  background: #444;
+  background: #222d32;
   color: white;
   border-color: gray;
 }
@@ -36,6 +36,11 @@ label[for="plot_dpi"] {
   bottom: 50%;
   right: 30%;
 }
+/* withProgress notification */
+/*.shiny-progress-notification {
+  background: #f59d00;
+}
+*/
 
 .shiny-notification {
   opacity: 0.99;
