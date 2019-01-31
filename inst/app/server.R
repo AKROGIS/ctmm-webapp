@@ -423,12 +423,18 @@ output:
     update_augmented_data(tele_list)
   }
   # clear every item in augmented data(everything other than input. include other global values outside data, like id_pal etc). we need to reset state sometimes, and we cannot use NULL or initialize again. This is much better than manually cleaning up as we may add new sub values in different places in app later
+  # [tricky to reset whole values](https://stackoverflow.com/questions/26803536/shiny-how-to-update-a-reactivevalues-object)
   # TODO delete individual is still manually update for now, but that's tricky
   reset_augmented <- function(values) {
     value_list <- reactiveValuesToList(values)
     # we only need the first level items, clearing them is enough. setting a list to NULL, assigning its subitem later is OK.
+    # some items are excluded from reset. we are manual excluding and reset all by default, this should be better than excluding manually. all movebank items listed in bookmarks. all reactive values should be in bookmark as they are global variables.
+    excluded_items <- c("input_tele_list",
+                        "all_studies_stat", "studies", "study_detail",
+                        "study_data_response", "study_preview",
+                        "move_bank_dt")
     lapply(names(value_list), function(x) {
-      if (x != "input_tele_list") values[[x]] <- NULL
+      if (!(x %in% excluded_items)) values[[x]] <- NULL
       })
   }
   # update augmented data with tele_list (or merged dt/info if available). this is to keep augmented data consistent with same source. leave input_tele unchanged so everything can be reset back to input. augmentation on input data, like time/loc subsetting (add subset to data set), outlier removal, calibration. later just call this with input_tele to reset. for import just init input_tele then start
@@ -632,8 +638,11 @@ output:
   output$studies <- DT::renderDT(
     DT::datatable({
       req(values$studies)
-      selected_studies_cols <- c("id", "name", "deployments",
-                                 "events", "individuals")
+      selected_studies_cols <- c("id", "name"
+                                 # "objective"
+                                 # "deployments",
+                                 # "events", "individuals"
+                                 )
       values$studies[owner == input$data_manager, selected_studies_cols,
                      with = FALSE]
       },
@@ -656,7 +665,9 @@ output:
   # $study_preview ----
   values$study_preview <- NULL
   output$study_preview <- DT::renderDT(
-    DT::datatable(req(values$study_preview), options = list(dom = 't')))
+    DT::datatable(req(values$study_preview),
+                  options = list(scrollX = TRUE, dom = "t"))
+    )
   # $move_bank_dt ----
   values$move_bank_dt <- NULL  # the downloaded whole data table, not rendered anywhere
   # the whole data preview box should be cleared with all actions other than download, otherwise it could be confusing when there is a previous download and user made other actions
@@ -685,8 +696,8 @@ output:
       log_msg("Movebank login failed")
     } else {
       studies_cols <- c("id", "name", "study_objective",
-                           "number_of_deployments", "number_of_events",
-                           "number_of_individuals",
+                           # "number_of_deployments", "number_of_events",
+                           # "number_of_individuals",
                            "i_am_owner", "i_can_see_data", "license_terms")
       all_studies <- try(fread(res$res_cont, select = studies_cols,
                                colClasses =
@@ -735,7 +746,7 @@ output:
       })
       res <- ctmmweb:::get_study_detail(mb_id(), input$user, input$pass)
       # It's easier to specify cols here to drop some cols and reorder cols at the same time
-      detail_cols <- c("id", "name", "study_objective", "study_type", "license_terms", "principal_investigator_name", "principal_investigator_address", "principal_investigator_email", "timestamp_start", "timestamp_end", "bounding_box", "location_description", "main_location_lat", "main_location_long", "number_of_tags", "acknowledgements", "citation", "comments", "grants_used", "there_are_data_which_i_cannot_see")
+      detail_cols <- c("id", "name", "study_objective", "license_terms", "principal_investigator_name", "principal_investigator_address", "principal_investigator_email", "bounding_box", "location_description", "main_location_lat", "main_location_long", "acknowledgements", "citation", "comments", "grants_used", "there_are_data_which_i_cannot_see")
       detail_dt <- try(fread(res$res_cont, select = detail_cols))
       req(is.data.table(detail_dt))
       # need to check content in case something wrong and code below generate error on empty table
@@ -771,10 +782,12 @@ output:
     # need to check response content to determine result type. the status is always success
     # read first rows to determine if download is successful. fread will guess sep so still can read html for certain degree, specify `,` will prevent this
     # sometimes the result is one line "<p>No data are available for download.</p>". fread and read.csv will take one line string as file name thus cannot find the input file, generate some warnings. To use string as input need at least one "\n". Adding "\n" will solve this error but get valid dt with 0 row, also we cannot use the nrows parameters. We don't need to print error to console which can be confusing to user, and we have message in app. We can always turn this on in debugging.
-    movebank_dt_preview <- try(fread(res$res_cont, sep = ",", nrows = 5),
+    # when there is no data but the license agreement(example file in ctmm-shiny/movebank), this rely on fread behavior reading non valid csv. previously it will not be a data.table. now it's almost always a data.table. if ask to use header, it will have zero row table.
+    movebank_dt_preview <- try(fread(res$res_cont, sep = ",", nrows = 5,
+                                     header = TRUE),
                                silent = TRUE)
     # the fread in ctmm can use == directly because it was reading in df only, only one class attributes. Here we need to use %in% instead
-    if (!("data.table" %in% class(movebank_dt_preview))) {
+    if (nrow(movebank_dt_preview) == 0) {
       showNotification(
         h4("No data available or you need to agree to license term first. See details in Selected Study Data box."),
         type = "warning", duration = 5)
@@ -794,7 +807,9 @@ output:
       individual_count <- nrow(unique(move_bank_dt, by = "individual_id"))
       values$study_data_response <- paste0(
           "Data downloaded with ", row_count, " rows, ",
-          individual_count, " individuals. ", "Preview:")
+          individual_count, " individuals.\n",
+          "Preview sample rows and columns below")
+      # we don't what columns are available so cannot subset or select here
       values$study_preview <- movebank_dt_preview
       values$move_bank_dt <- move_bank_dt
       # LOG download movebank data
