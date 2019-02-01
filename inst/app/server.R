@@ -780,14 +780,8 @@ output:
     res <- ctmmweb:::get_study_data(mb_id(), input$user, input$pass)
     removeNotification(note_data_download)
     # need to check response content to determine result type. the status is always success
-    # read first rows to determine if download is successful. fread will guess sep so still can read html for certain degree, specify `,` will prevent this
-    # sometimes the result is one line "<p>No data are available for download.</p>". fread and read.csv will take one line string as file name thus cannot find the input file, generate some warnings. To use string as input need at least one "\n". Adding "\n" will solve this error but get valid dt with 0 row, also we cannot use the nrows parameters. We don't need to print error to console which can be confusing to user, and we have message in app. We can always turn this on in debugging.
-    # when there is no data but the license agreement(example file in ctmm-shiny/movebank), this rely on fread behavior reading non valid csv. previously it will not be a data.table. now it's almost always a data.table. if ask to use header, it will have zero row table.
-    movebank_dt_preview <- try(fread(res$res_cont, sep = ",", nrows = 5,
-                                     header = TRUE),
-                               silent = TRUE)
-    # the fread in ctmm can use == directly because it was reading in df only, only one class attributes. Here we need to use %in% instead
-    if (nrow(movebank_dt_preview) == 0) {
+    comma_count <- ctmmweb:::header_comma_count(res$res_cont)
+    if (comma_count < 2) {
       showNotification(
         h4("No data available or you need to agree to license term first. See details in Selected Study Data box."),
         type = "warning", duration = 5)
@@ -803,14 +797,13 @@ output:
       move_bank_dt <- try(fread(res$res_cont, sep = ","))
       removeNotification(note_parse)
       row_count <- formatC(move_bank_dt[, .N], format = "d", big.mark = ",")
-      # individual_count <- length(unique(move_bank_dt[, individual_id]))
       individual_count <- nrow(unique(move_bank_dt, by = "individual_id"))
       values$study_data_response <- paste0(
           "Data downloaded with ", row_count, " rows, ",
           individual_count, " individuals.\n",
-          "Preview sample rows and columns below")
-      # we don't what columns are available so cannot subset or select here
-      values$study_preview <- movebank_dt_preview
+          "Preview below")
+      # don't know what columns are available so cannot subset or select here
+      values$study_preview <- move_bank_dt[1:5]
       values$move_bank_dt <- move_bank_dt
       # LOG download movebank data
       log_msg("Movebank data downloaded", mb_id())
@@ -2697,7 +2690,9 @@ output:
   output$overlap_plot_value_range <- renderPlot({
     overlap_dt <- select_models_overlap()
     # need to wait until table is finished, use current page.
-    current_order <- overlap_dt[rev(req(input$overlap_summary_rows_current)),
+    # sometimes there was error here but no problem in app, maybe when req halted execution, it was not suitable inside data.table call
+    req(input$overlap_summary_rows_current)
+    current_order <- overlap_dt[rev(input$overlap_summary_rows_current),
                                 Combination]
     # tried to move the dynamic column part to reactive expression, which would cause the table refresh twice in start (update after table is built), and row selection caused data change, table refresh and lost row selection.
     # want to show all values if just selected rows, but update with filter. rows_all update with filter, plot use limits to filter them. selected rows only update a column and change color. this is different from the other 2 tab.
@@ -2899,7 +2894,10 @@ output:
   output$estimate_speed_plot <- renderPlot({
     dt <- select_models_estimate_speed()
     # need to wait until table is finished, use current page.
-    current_order <- dt[rev(req(input$estimate_speed_table_rows_current)), model_name]
+    # sometimes there was error here but no problem in app, maybe when req halted execution, it was not suitable inside data.table call
+    req(input$estimate_speed_table_rows_current)
+    current_order <- dt[rev(input$estimate_speed_table_rows_current),
+                        model_name]
     # want to show all values if just selected rows, but update with filter. rows_all update with filter, plot use limits to filter them. selected rows only update a column and change color. this is different from the other 2 tab.
     # rely on column position here, otherwise need to be string pattern, both not ideal. add backtick to quote, thus after unquote it will be valid name
     speed_col_name_ticked <- ctmmweb:::get_ticked_col_name(names(dt),
