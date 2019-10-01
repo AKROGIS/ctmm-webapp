@@ -4,7 +4,7 @@ This is a web app for analyzing animal tracking data, built upon [ctmm R package
 
 ## Install and run app
 
-Just run this in R console ([More detailed instructions](https://ctmm-initiative.github.io/ctmmwebdoc/articles/installation.html)):
+- Just run this in R console ([More detailed instructions](https://ctmm-initiative.github.io/ctmmwebdoc/articles/installation.html)):
 
 2. Use the upstream code to load dependencies
 
@@ -16,8 +16,9 @@ Just run this in R console ([More detailed instructions](https://ctmm-initiative
 3. Start R console, run these lines.
 
     ```r
-    install.packages("ctmmweb", repos = c(getOption("repos"),
-                     "https://ctmm-initiative.github.io/ctmm_repo/"))
+    install.packages("ctmmweb", 
+                    repos = c("https://cloud.r-project.org/",
+                              "https://ctmm-initiative.github.io/ctmm_repo/"))
     quit
     ```
 
@@ -40,6 +41,9 @@ Just run this in R console ([More detailed instructions](https://ctmm-initiative
     ```
 
   More details about installation and compatibility problems can be [found here.](https://ctmm-initiative.github.io/ctmmwebdoc/articles/installation.html)
+
+- We also built [a windows installer](https://github.com/ctmm-initiative/ctmmweb/releases/download/v0.2.6b/ctmmwebsetup_beta.exe), which will download R installer if needed, install R and package, create shortcut for the app.
+
 
 ## Run app from our website
 

@@ -2,16 +2,17 @@
 % Please edit documentation in R/1_ctmm_data.R
 \name{report}
 \alias{report}
-\title{Report data summary on telemetry object/list}
+\title{Report data summary on telemetry list}
 \usage{
-report(tele_obj_list)
+report(tele_list)
 }
 \arguments{
-\item{tele_obj_list}{\code{\link[ctmm:as.telemetry]{ctmm::as.telemetry()}} telemetry object or list}
+\item{tele_list}{\code{\link[ctmm:as.telemetry]{ctmm::as.telemetry()}} telemetry list. Use \code{drop = FALSE}
+in \code{\link[ctmm:as.telemetry]{ctmm::as.telemetry()}} to ensure a proper list.}
 }
 \value{
 A summary \code{data.table}
 }
 \description{
-Report data summary on telemetry object/list
+Report data summary on telemetry list
 }

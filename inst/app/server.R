@@ -30,6 +30,27 @@ server <- function(input, output, session) {
                  headerText = "App Information"
     )
   })
+  # one time check if app is running in hosted mode. this is needed in LOG feature and self update check
+  APP_local <- (isolate(session$clientData$url_hostname) == "127.0.0.1")
+  # pkg update check ----
+  # this will not work in hosted server because pkg installation folder have permission limit. we don't need to check in hosted server too so just disable for server.
+  # to test need to change several places: days passed condition 30 -> 0, check_update since_date to older date, pkg_date and commit date compare condition. test with internet off server times, first should time out, later should not check.
+  # check last check date to determine whether to check. only count last check action, no matter if it's success. if user don't have internet, counting success will check again and again.
+  if (APP_local) {
+    last_check_data_path <- system.file("extdata", "last_check_time.rds", package = "ctmmweb")
+    last_check_time <- readRDS(last_check_data_path)
+    # data("last_check_time", package = "ctmmweb")
+    days_passed <- (lubridate::now() - last_check_time) / lubridate::ddays(1)
+    # check update.
+    if (days_passed > 60) {
+      installed_pkg_time <- file.mtime(system.file("app", package = "ctmmweb"))
+      ctmmweb:::check_update(installed_pkg_time)
+    }
+    # take current date, record as pkg data
+    last_check_time <- lubridate::now()
+    # save(last_check_time, file = last_check_data_path)
+    saveRDS(last_check_time, file = last_check_data_path)
+  }
   # values that hold them all ----
   # ideally should put everything more organized. could print str() after all possible action tried, in workreport action. then organize like this:
   # input_tele_list
@@ -44,8 +65,6 @@ server <- function(input, output, session) {
     isolate(input[[option]])
   }
   # global LOG variables ----
-  # one time check if app is running in hosted mode
-  APP_local <- (isolate(session$clientData$url_hostname) == "127.0.0.1")
   # to copy from 07_report_save_load.Rmd --
   LOG_console <- TRUE
   LOG_color_mappings <- list(time_stamp = crayon::cyan,
@@ -375,10 +394,8 @@ output:
     tele_list <- tryCatch(
       withCallingHandlers(
         # previously as.telemetry can work on single file or data.frame, but now we need special treatment for importing multiple files, so it need to be separated.
-        # ctmmweb:::wrap_single_telemetry(ctmm::as.telemetry(as_telemetry_input)),
         if (is.data.frame(as_telemetry_input)) {
-          ctmmweb:::wrap_single_telemetry(
-            ctmm::as.telemetry(as_telemetry_input))
+          ctmm::as.telemetry(as_telemetry_input, mark.rm = TRUE, drop = FALSE)
         } else {
           ctmmweb:::import_tele_files(as_telemetry_input)
           },
@@ -493,7 +510,8 @@ output:
         # tele obj/list already, update directly
         # LOG data loaded from app()
         log_msg("Loading telemetry data directly to app")
-        isolate(update_input_data(app_input_data))
+        # coerce to list first
+        isolate(update_input_data(ctmmweb::as_tele_list(app_input_data)))
       } else {
         # when the input need to be imported
         # LOG import telemetry data, it could be an object so cannot put in log_msg 2nd parameter. cannot know original parameter string once transferred as app() parameter.
@@ -877,7 +895,7 @@ output:
                                            targets = "_all")),
                     scrollX = TRUE,
                     pageLength = individuals_PAGE_LENGTH,
-                    lengthMenu = c(2, 4, 6, 8, 10, 20)),
+                    lengthMenu = c(6, 10, 20, 100, 500)),
                   rownames = FALSE) %>%
       DT::formatStyle('identity', target = 'row',
                       color = DT::styleEqual(info_p$identity,
@@ -992,7 +1010,11 @@ output:
       # LOG export current
       log_dt_md(select_data()$info, "Export current data")
       export_current_path <- file.path(session_tmpdir, "export.csv")
-      fwrite(select_data()$data_dt, file = export_current_path,
+      # add outliers back with extra marked outlier column for movebank compability. values$data$all_removed_outliers have many extra columns for outlier calculation, need to pick columns(we have input_tele_list but not input dt). need to filter by selected identity.
+      dt <- ctmmweb:::add_outliers_back(select_data()$data_dt,
+                              select_data()$chosen_ids,
+                              values$data$all_removed_outliers)
+      fwrite(dt, file = export_current_path,
              dateTimeAs = "write.csv")
       file.copy(export_current_path, file)
     }
@@ -1038,7 +1060,7 @@ output:
   add_new_data_set <- function(new_id, new_tele, new_dt = NULL) {
     new_tele@info$identity <- new_id
     # need item name, and in list for most operations. and c work with list and list, not list with item.
-    new_tele_list <- ctmmweb:::wrap_single_telemetry(new_tele)
+    new_tele_list <- ctmmweb::as_tele_list(new_tele)
     # add to input tele_list, import new tele and add to dt. no need to import whole dataset, but do need to sort and update info. note the new subset usually have row_name duplicate with existing data for different id
     all_tele_list <- ctmmweb:::sort_tele_list(
       c(values$data$tele_list, new_tele_list)
@@ -1865,6 +1887,7 @@ output:
       dt[, inc_t_filtered_converted := round(
         inc_t_filtered / unit_picked$scale, 2)]
       # wanted to use id as we want to keep the color mapping in subset, but factor cannot get join work.
+      # for small data set per individual, the points count could be too small for kmeans. minimal is 3 for filtered inc_t
       res <- lapply(1:nrow(kmeans_dt), function(i) {
         ctmmweb:::detect_clusters(
           na.omit(dt[identity == kmeans_dt[i, identity],
@@ -1889,16 +1912,20 @@ output:
     dt <- req(detect_schedules())$dt
     clusters_dt <- detect_schedules()$clusters_dt
     # need to use fully qualified format after copied code from rmd, test with clean session, otherwise ggplot2 is loaded.
+    # note every step remove NA. the count can have 0.5 marks when total is low(pretty breaks default to 5 when total is 2, which created small marks)
+    int_breaks <- function(x, n = 5) pretty(x, n)[pretty(x, n) %% 1 == 0]
     ggplot2::ggplot(dt, ggplot2::aes(x = inc_t_filtered_converted, fill = id)) +
       ggplot2::geom_histogram(bins = input$kmeans_bins, na.rm = TRUE, show.legend = FALSE) +
       ggplot2::geom_point(data = clusters_dt, ggplot2::aes(x = V1, y = 0),
                           na.rm = TRUE, color = "blue", shape = 2,
                           show.legend = FALSE) +
-      ggrepel::geom_text_repel(data = na.omit(clusters_dt),
-                               ggplot2::aes(x = V1, y = 0, label = V1)) +
+      ggrepel::geom_text_repel(data = clusters_dt,
+                               ggplot2::aes(x = V1, y = 0, label = V1),
+                               na.rm = TRUE) +
       ggplot2::xlab(paste0("Filtered Sampling Schedules(",
                            detect_schedules()$unit_picked$name, ")")) +
       ggplot2::facet_grid(id ~ .) +
+      ggplot2::scale_y_continuous(breaks= int_breaks) +
       ctmmweb:::factor_fill(dt$id) +
       ctmmweb:::BIGGER_THEME
   })
@@ -2152,12 +2179,38 @@ output:
         par_try_tele_guess_mem(tele_guess_list,
                                parallel = input_value("parallel")))),
       message = "Trying different models to find the best ...")
+    # if error occurred, stop next step. it could one error object or a list with some nodes as error object.
+    # tried to detect if in shiny app, checking session object existence. which didn't work when called inside a package function. so only print console msg in pkg function, and give notification here
+    # error "S3 method ‘summary.character’ not found" on issue 96, 97. I used to check result list error class, but later when comparing model running summary on each item, some still failed (likely some item is just error or string). Could be some error not in proper error type, just returned NULL etc. Safe way is to ensure the result will pass summary and compare without problem.
+    # met_error <- any(ctmmweb:::has_error(res))
+    # if (met_error) {
+    #   shiny::showNotification("Error in model selection, check error messages",
+    #                           duration = 4, type = "error")
+    # }
+    # req(!met_error)
     # always save names in list
     names(res) <- names(select_data()$tele_list)
-    # initialize model_list_dt in auto fit
-    model_list_dt <- ctmmweb:::model_try_res_to_model_list_dt(res)
-    # always add dAICc columns after conversion, after merge list_dt
-    ctmmweb:::compare_models(model_list_dt)
+    # try cannot really trap error sometimes?
+    # res[[3]] <- "test" # to generate error manually
+    tryCatch({
+      # initialize model_list_dt in auto fit
+      model_list_dt <- ctmmweb:::model_try_res_to_model_list_dt(res)
+      # always add dAICc columns after conversion, after merge list_dt
+      ctmmweb:::compare_models(model_list_dt)
+    }, error = function(e) {
+      cat(crayon::bgRed$white("Error in model selection, check error message. Try turning off parallel or fine tune varigram then try again. If still having problem, save progress and report issue in github\n"))
+      print(e)
+      # shiny notification will not work here
+      # shiny::showNotification("Error in model selection, check error messages",
+      #                         duration = 4, type = "error")
+      req(FALSE)
+    })
+    # met_error <- inherits(test, "try-error")
+    # if (met_error) {
+    #   shiny::showNotification("Error in model selection, check error messages",
+    #                           duration = 4, type = "error")
+    # }
+    # req(!met_error)
     # no need to mark tuned-guess. it's obvious in tab 1, and we can get all current guess directly
     model_list_dt[, init_ctmm_name := "guess"]
     model_list_dt[, init_ctmm := list(list(
@@ -2415,8 +2468,9 @@ output:
   # get_hrange_weight_para() ----
   get_hrange_weight_para <- reactive({
     tele_list <- select_models()$tele_list
-    # must use display name since it's possible to have same animal different models
-    display_names <- select_models()$info_dt$display_name
+    # must use display name since it's possible to have same animal different models. need to separate from animal name as map page need to have different layer name for points and home ranges
+    display_names <- paste0(select_models()$info_dt$display_name,
+                            " - Home Range")
     # need default value to be FALSE instead of NULL
     weights_list <- as.list(rep(FALSE, length(tele_list)))
     names(weights_list) <- display_names
@@ -2424,11 +2478,16 @@ output:
     title_list <- as.list(display_names)
     names(title_list) <- display_names
     if (!is.null(values$hrange_weight_vec)) {
-      for (x in values$hrange_weight_vec) {
+      # the list came from display name, but title and weight have homerange suffix already. need to match them internally. this need to be consistent with line above
+      matched_names <- paste0(values$hrange_weight_vec,
+                              " - Home Range")
+      for (x in matched_names) {
         weights_list[[x]] <- TRUE
         title_list[[x]] <- paste0(x, "\n (Optimal Weighting)")
       }
     }
+    # map cannot take named vector properly (think it's JSON). just plain vector, since we cannot use the name index anyway(name have suffix)
+    names(title_list) <- NULL
     return(list(weights = unlist(weights_list),
                 title_vec = unlist(title_list)))
   })
@@ -2439,12 +2498,22 @@ output:
     # LOG home range calculation
     log_msg("Calculating Home Range ...")
     withProgress(print(system.time(
-      res <- akde_mem(tele_list, CTMM = select_models()$model_list,
-                      weights = get_hrange_weight_para()$weights))),
-      message = "Calculating Home Range ...")
+      # res <- akde_mem(tele_list, CTMM = select_models()$model_list,
+      #                 weights = get_hrange_weight_para()$weights)
+      res <- ctmmweb:::fall_back(
+        akde_mem, list(tele_list, CTMM = select_models()$model_list,
+                       weights = get_hrange_weight_para()$weights),
+        akde_mem, list(tele_list, CTMM = select_models()$model_list,
+                       weights = get_hrange_weight_para()$weights, res = 1),
+        "akde error, changing res to 1 to try again")
+      )), message = "Calculating Home Range ...")
     # add name so plot can take figure title from it
     # used to be model name, changed to display name. both the plot title and overlap result matrix names come from this.
-    names(res) <- select_models()$info_dt$display_name
+    # names(res) <- select_models()$info_dt$display_name
+    # cannot set here as any change will cause change in reactive?
+    # cannot garrantee this is ready before home range calculation. so need to set outside
+    # names(res) <- get_hrange_weight_para()$title_vec
+    # since name is not ready, any call need to set name properly first
     return(res)
   })
   # home range levels ----
@@ -2485,11 +2554,13 @@ output:
     log_save_UD("home_range")
     # always use model mode vario layout, different from vario plot which have 3 modes.
   }, height = function() { select_models()$vario_layout$height })
-  # the actual export functions. multiple variables in environment are used. put them into functions so we can reorganize raster/shapefile in same dialog easier.
+  # the actual export functions. multiple variables in environment are used. put them into functions so we can reorganize raster/shapefile in same dialog easier. they need to add log so difficult to extract to outside functions.
   # export raster ----
   # file_extension doesn't include . so we can use it also in folder name.
   # this need to be a function so that we can use different file extension with raster, and the switch call is much simpler. to combine into shapefile function need a lot parameters. could refactor if have more usage.
-  export_rasterfiles <- function(file, file_extension) {
+  # using current selected models implicitly, since this is embeded function anyway
+  # there should be no difference for home range and occurence here.
+  export_rasterfiles <- function(ud_list, file, prefix, file_extension) {
     save_rasterfiles <- function(hrange_list) {
       write_f <- function(folder_path) {
         # hrange_list came from select_models(), so the order should be synced
@@ -2504,16 +2575,17 @@ output:
       }
       return(write_f)
     }
-    ctmmweb:::build_zip(file, save_rasterfiles(select_models_hranges()),
-                        session_tmpdir, paste0("Home_Range_",
+    ctmmweb:::build_zip(file, save_rasterfiles(ud_list),
+                        session_tmpdir, paste0(prefix,
                                                file_extension, "_"))
     # LOG build raster
     log_msg(paste0(file_extension, " files built and downloaded"))
   }
   # export shapefiles ----
-  export_shapefiles <- function(file) {
+  export_shapefiles <- function(ud_list, file, ud_levels, prefix) {
     # closure: create a function that take reactive parameters, return a function waiting for folder path. use it as parameter for build zip function, which provide folder path as parameter
     # functional::Curry is misnomer, and it's extra dependency. this function take some data parameters, return a function that only need target path part. that function was called by the write file function in downloadhandler, when part of the target path was provided.
+    # same with occurrence, just occurence use single 0.95 instead of 3 values.
     save_shapefiles <- function(hrange_list, ud_levels) {
       write_f <- function(folder_path) {
         # hrange_list came from select_models(), so the order should be synced
@@ -2525,19 +2597,19 @@ output:
       }
       return(write_f)
     }
-    ctmmweb:::build_zip(file, save_shapefiles(select_models_hranges(),
-                                              get_hr_levels()),
-                        session_tmpdir, "Home_Range_shapefile_")
+    ctmmweb:::build_zip(file, save_shapefiles(ud_list, ud_levels),
+                        session_tmpdir, prefix)
     # LOG build shapefiles
     log_msg("Shapefiles built and downloaded")
   }
   # export dialog ----
   observeEvent(input$export_homerange_dialog, {
+    req(select_models_hranges())
     showModal(modalDialog(title = "Export All Home Ranges to Zip",
       fluidRow(
         column(12, radioButtons("homerange_export_format", "Format",
                     choiceNames = list(
-    div("Esri shapefile", pre("polygons of the low, ML, and high home-range area estimates.")),
+    div("Esri shapefile", pre("polygons of the low, est, and high home-range area estimates.")),
     # "Esri shapefile: polygons corresponding to the low, ML, and high home-range area estimates.",
     div("raster package native format .grd", pre("pixel values corresponding to the density function.")),
     # "Native raster package format .grd: pixel values corresponding to the density function.",
@@ -2575,9 +2647,67 @@ output:
     },
     content = function(file) {
       switch(input$homerange_export_format,
-             shapefile = export_shapefiles(file),
-             grd = export_rasterfiles(file, "grd"),
-             tif = export_rasterfiles(file, "tif"))
+             shapefile = export_shapefiles(select_models_hranges(), file,
+                                           get_hr_levels(),
+                                           "Home_Range_shapefile_"),
+             grd = export_rasterfiles(select_models_hranges(), file,
+                                      "Home_Range_", "grd"),
+             tif = export_rasterfiles(select_models_hranges(), file,
+                                      "Home_Range_", "tif"))
+    }
+  )
+  # save dialog appear twice, use module or just copy paste? for now just copy paste. there are multiple scattered places that need to be parameterized, so abstract can add quite some extra stuff.
+  # export occurrence ----
+  observeEvent(input$export_occurrence_dialog, {
+    req(select_models_occurrences())
+    showModal(modalDialog(title = "Export All Occurrences to Zip",
+                          fluidRow(
+                            column(12, radioButtons("occur_export_format", "Format",
+                                                    choiceNames = list(
+                                                      div("Esri shapefile", pre("polygons of the low, est, and high home-range area estimates.")),
+                                                      # "Esri shapefile: polygons corresponding to the low, ML, and high home-range area estimates.",
+                                                      div("raster package native format .grd", pre("pixel values corresponding to the density function.")),
+                                                      # "Native raster package format .grd: pixel values corresponding to the density function.",
+                                                      div("GeoTiff .tif", pre("pixel values corresponding to the density function."))
+                                                      # "GeoTiff .tif: pixel values corresponding to the density function."
+                                                    ),
+                                                    # make sure file type name is consistent with extension. we used file type in zip file name, and extension in folder inside zip.
+                                                    choiceValues = list("shapefile", "grd", "tif"),
+                                                    width = "100%"
+                            )
+                            ),
+                            column(12, h4("See more details about file format in ",
+                                          tags$a(href = "https://ctmm-initiative.github.io/ctmm/reference/export.html", "ctmm::export"), ", ",
+                                          tags$a(href = "https://www.rdocumentation.org/packages/raster/versions/2.6-7/topics/writeRaster", "raster::writeRaster")
+                            ))
+                          ),
+                          size = "m",
+                          footer = fluidRow(
+                            column(3, offset = 0,
+                                   modalButton("Cancel", icon = icon("ban"))),
+                            column(3, offset = 6,
+                                   downloadButton("download_occur",
+                                                  "Save",
+                                                  icon = icon("save"),
+                                                  style = ctmmweb:::STYLES$download_button))
+                          )
+    ))
+  })
+  output$download_occur <- downloadHandler(
+    filename = function() {
+      # up to min so it should be consistent with the folder name inside zip
+      current_time <- format(Sys.time(), "%Y-%m-%d_%H-%M")
+      paste0("Occurrence_", input$occur_export_format, "_", current_time, ".zip")
+    },
+    content = function(file) {
+      switch(input$occur_export_format,
+             shapefile = export_shapefiles(select_models_occurrences(), file,
+                                           0.95,
+                                           "Occurrence_shapefile_"),
+             grd = export_rasterfiles(select_models_occurrences(), file,
+                                      "Occurrence_", "grd"),
+             tif = export_rasterfiles(select_models_occurrences(), file,
+                                      "Occurrence_", "tif"))
     }
   )
   # p7. overlap ----
@@ -2621,7 +2751,8 @@ output:
       # override the low/high cols with background
       DT::formatStyle(c("CI low", "CI high"),
                       color = scales::hue_pal()(1)) %>%
-      DT::formatStyle("ML", color = "blue") %>%
+      # overlap is calculated and we are always naming it as est
+      DT::formatStyle("est", color = "blue") %>%
       # override the id col color
       DT::formatStyle(c("v1", "v2"), target = 'cell',
                       color = DT::styleEqual(names(display_color),
@@ -2644,18 +2775,25 @@ output:
     # COPY start --
     overlap_dt[, selected := FALSE]
     overlap_dt[input$overlap_summary_rows_selected, selected := TRUE]
-    g <- ggplot2::ggplot(overlap_dt, ggplot2::aes(x = ML, y = Combination,
+    # two possible tag names
+    g <- ggplot2::ggplot(overlap_dt, ggplot2::aes(x = est, y = Combination,
                                                   color = selected)) +
       # make plot sync with table sort and filtering
       ggplot2::scale_y_discrete(limits = current_order) +
-      # na.rm in point, text, errorbar otherwise will warning in filtering
-      ggplot2::geom_point(size = 2, na.rm = TRUE, color = "blue") +
       {if (input$show_overlap_label) {
-        ggplot2::geom_text(ggplot2::aes(label = ML), hjust = 0, vjust = -0.5,
-                           show.legend = FALSE, na.rm = TRUE)}} +
+        ggplot2::geom_text(ggplot2::aes(label = est), hjust = 0, vjust = -0.5,
+                           size = 4.5,
+                           show.legend = FALSE, na.rm = TRUE) }} +
       ggplot2::geom_errorbarh(ggplot2::aes(xmax = `CI high`, xmin = `CI low`),
-                              size = 0.45, height = 0.35, na.rm = TRUE) +
-      ggplot2::xlab("Overlap") + ctmmweb:::BIGGER_THEME
+                              size = 0.9, height = 0.35, na.rm = TRUE) +
+      # na.rm in point, text, errorbar otherwise will warning in filtering
+      # draw point after error bar, otherwise error bar will block part of point
+      ggplot2::geom_point(size = 3, na.rm = TRUE, color = "blue") +
+      ggplot2::xlab("Overlap") + ctmmweb:::BIGGER_THEME +
+      {if (length(input$overlap_summary_rows_selected) > 0) {
+        ggplot2::scale_color_discrete(labels = c("Not Selected", "Selected"))
+        } else { ggplot2::theme(legend.position = "none") }
+      }
     # COPY end --
     # LOG save pic
     log_save_ggplot(g, "overlap_plot_value_range")
@@ -2671,7 +2809,7 @@ output:
     # when nothing selected. don't use length == 0 because this is more specific
     if (is.null(input$overlap_summary_rows_selected)) {
       chosen_rows <- select_models_overlap()[
-        req(input$overlap_summary_rows_current)][ML != 0, .(v1, v2)]
+        req(input$overlap_summary_rows_current)][est != 0, .(v1, v2)]
     } else {
       # req both value to prevent the status when table is not ready
       selected_rows_in_current_order <-
@@ -2732,6 +2870,7 @@ output:
              size = "l", file = "help/8_occurrence.md")
   # select_models_occurrences() ----
   select_models_occurrences <- reactive({
+    req(select_models())
     # LOG Occurrence calculation
     log_msg("Calculating Occurrence ...")
     withProgress(print(system.time(
@@ -2958,16 +3097,20 @@ output:
       selected_model_names <- select_models()$info_dt$model_name
       # though the layer name can be different. they are all just vectors in certain order, the home range/model_name/mapped color/display name all in same order.
       # use display name as layer name, but need to add post fix in simple format, when identity is not duplicated and used as display name directly
-      if (anyDuplicated(select_models()$info_dt, by = "identity") == 0) {
-       hrange_layer_names <- stringr::str_c(select_models()$info_dt$identity,
-                                            " - Home Range")
-      } else {
-        hrange_layer_names <- selected_model_names
-      }
+      # if (anyDuplicated(select_models()$info_dt, by = "identity") == 0) {
+      #  hrange_layer_names <- stringr::str_c(select_models()$info_dt$identity,
+      #                                       " - Home Range")
+      # } else {
+      #   hrange_layer_names <- selected_model_names
+      # }
+      # add home range function need names from home range list. need to assign it first
+      hrange_list <- select_models_hranges()
+      names(hrange_list) <- get_hrange_weight_para()$title_vec
+      # hrange_layer_names <- get_hrange_weight_para()$title_vec
       leaf <- leaf %>%
-        ctmmweb:::add_home_range_list(select_models_hranges(), get_hr_levels(),
+        ctmmweb:::add_home_range_list(hrange_list, get_hr_levels(),
                             hr_pal(selected_model_names)) %>%
-        ctmmweb::add_control(c(info$identity, hrange_layer_names))
+        ctmmweb::add_control(c(info$identity, names(hrange_list)))
     } else {
       leaf <- leaf %>%
         ctmmweb::add_control(info$identity)
@@ -3078,9 +3221,11 @@ output:
         saveRDS(values$model_list_dt,
                 file = file.path(session_tmpdir, "model_list_dt.rds"))
         # LOG save current telemetry data as csv so it can be imported easier. Only do this in generated report, not in the process to avoid too frequent saves.
-        log_dt_md(values$data$merged$info,
-                  "Current Telemetry Data")
-        fwrite(values$data$merged$data_dt,
+        log_dt_md(values$data$merged$info, "All Telemetry Data")
+        dt <- ctmmweb:::add_outliers_back(values$data$merged$data_dt,
+                                          values$data$merged$info$identity,
+                                          values$data$all_removed_outliers)
+        fwrite(dt,
                file = file.path(session_tmpdir, "combined_data_table.csv"),
                dateTimeAs = "write.csv")
         # save error msg if captured

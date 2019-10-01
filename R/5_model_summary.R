@@ -146,43 +146,36 @@ hrange_list_dt_to_model_summary_dt <- function(model_list_dt, level.UD = 0.95) {
               c(names(res_dt)[1:(ncol(res_dt) - 2)], "quantile", "area"))
 }
 # given 3 values of CI, round them properly, keep 2 significant digit on difference
-round_CIs <- function(vec, digits = 2) {
-  # if NA in input, need remove. if all NA, there will be warnings.
-  # remove negative sign
-  minimal_diff <- min(abs(diff(vec)), na.rm = TRUE)
-  if (minimal_diff > 1) {
-    # don't need to worry digits.
-    round(vec, 2)
-  } else {
-    formated_diff <- format(minimal_diff, digits = 1, scientific = FALSE)
-    # if exactly 0, will not match 0.xx pattern
-    if (formated_diff == "0") return(vec)
-    # get 0.000, -2 to get the count of 0 after decimal point
-    zeros <- nchar(stringr::str_extract(formated_diff, "0\\.0*")) - 2
-    # need 2 more digits after zeros
-    round(vec, zeros + digits)
-  }
-}
+# round_CIs <- function(vec, digits = 2) {
+#   # if NA in input, need remove. if all NA, there will be warnings.
+#   # remove negative sign
+#   minimal_diff <- min(abs(diff(vec)), na.rm = TRUE)
+#   if (minimal_diff > 1) {
+#     # don't need to worry digits.
+#     round(vec, 2)
+#   } else {
+#     formated_diff <- format(minimal_diff, digits = 1, scientific = FALSE)
+#     # if exactly 0, will not match 0.xx pattern
+#     if (formated_diff == "0") return(vec)
+#     # get 0.000, -2 to get the count of 0 after decimal point
+#     zeros <- nchar(stringr::str_extract(formated_diff, "0\\.0*")) - 2
+#     # need 2 more digits after zeros
+#     round(vec, zeros + digits)
+#   }
+# }
 # given a col name -> unit formation function map, format a dt to scale the value, add unit label to col name. For model summary table, CI rows need to be round properly by each model. There are other tables that don't have CI rows and no model_no column. we have two usage for regular tables: data summary, outlier summary, and two usage of model tables here, make the other usage default as they are spreaded.
 # the round CI values by model feature may not be expected, turned off now. if need to turn it on, need to assign it in calling functions. The function is also used in info table formatting, note round_by_CI will not work with that usage because no model column
-format_dt_unit <- function(dt, name_unit_list, round_by_CI = FALSE) {
+format_dt_unit <- function(dt, name_unit_list) {
   # the col name list have error, which may not exist in some cases
   valid_col_names <- intersect(names(dt), names(name_unit_list))
   lapply(valid_col_names, function(col_name) {
+    # get col specific function to apply to col
     best_unit <- name_unit_list[[col_name]](dt[[col_name]])
     # creating new cols, delete old later is easier to check result. though that will cause col order changes, since new cols added in end, old cols removed. updating existing col instead
     # cannot use col_name variable in round_CI call, so use a temp col instead
     # calculate first, round according to need later
     dt[, temp := dt[[col_name]] / best_unit$scale]
-    if (round_by_CI) {
-      # could be warnings for NA input
-      suppressWarnings(
-        # note the individual rows rounded at individual points, but data frame print in R used highest precision. checking subset of dt showing proper digits. DT in app is showing them properly
-        dt[, (col_name) := round_CIs(temp), by = model_no]
-      )
-    } else {
-      dt[, (col_name) := round(temp, 2)]
-    }
+    dt[, (col_name) := round(temp, 2)]
     dt[, temp := NULL]
     # \n will cause the table in work report render messed up in html. sometimes DT render colunmn name with \n as same line anyway.
     setnames(dt, col_name, paste0(col_name, " (", best_unit$name, ")"))
@@ -190,22 +183,30 @@ format_dt_unit <- function(dt, name_unit_list, round_by_CI = FALSE) {
   return(dt)
   # dt[, (valid_col_names) := NULL]
 }
-round_cols <- function(dt, col_name_vec, digits = 3) {
-  lapply(col_name_vec, function(col_name) {
-    dt[, (col_name) := round(dt[[col_name]], digits)]
+# just take all columns, will check if numerical before round up
+round_cols <- function(dt, digits = 2) {
+  lapply(names(dt), function(col_name) {
+    if (class(dt[[col_name]]) == "numeric") {
+      dt[, (col_name) := round(dt[[col_name]], digits)]
+    }
   })
 }
 # the model summary table need to be formatted for units
 format_model_summary_dt <- function(model_summary_dt) {
   # data.table modify reference, use copy so we can rerun same line again
   dt <- copy(model_summary_dt)
-  cols_roundup <- c("DOF mean", "DOF area", "DOF speed", "\u0394AICc")
-  round_cols(dt, cols_roundup)
+  # should round all numeric values. there are new columns after ctmm update.
+  # cols_roundup <- c("DOF mean", "DOF area", "DOF speed", "\u0394AICc")
+  # cols_roundup <- names(dt)[5:ncol(dt)]
+  # except estimate level column which is not numerical
+  # cols_roundup <- cols_roundup[!cols_roundup == "estimate"]
+  round_cols(dt)
   # empty cells will have NA since they are numeric columns.
   # remove the duplicated values in CI rows to reduce cluter. - this is not needed with the 1 row design, but leave it in comment in case we want to switch back.
   # dt[stringr::str_detect(estimate, "CI"),
   #        c("\u0394AICc", "DOF mean", "DOF area") := NA_real_]
   # need a list to hold function as element, c have same effect but list is more verbose
+  # CI columns will be combined and created later
   name_unit_list <- list("area" = pick_unit_area,
                          "\u03C4[position]" = pick_unit_seconds,
                          "\u03C4[velocity]" = pick_unit_seconds,
@@ -243,7 +244,8 @@ combine_summary_ci <- function(summary_dt, hrange = FALSE) {
     move_last_col_after_ref(dt, col_name)
     return(dt)  # the else branch of if clause will be NULL if use if clause as last expression.
   })
-  res <- dt[estimate == "ML"]
+  # CRAN version ctmm 0.5.6 using ML, later development version using est
+  res <- dt[estimate %in% c("ML", "est")]
   res[, estimate := NULL]
 }
 # combined steps to make usage easier, otherwise the function name could be confusing, use summary_dt to represent formated modle_summary, the final shape. didn't use this pattern for home range.
@@ -363,7 +365,8 @@ overlap_matrix_to_dt <- function(mat_3d, clear_half = TRUE) {
   # need the data.table of full data, for overview table. 3 versions in columns can only work by tags which is not reliable. add another column of low/ML/high and save 3 version in rows, just like the model summary table
   overlap_matrix_dt <- rbindlist(list(
     matrix_to_dt(mat_3d[ , , 1], "CI low", clear_half),
-    matrix_to_dt(mat_3d[ , , 2], "ML", clear_half),
+    # we are assigning this by location, so it can be changed
+    matrix_to_dt(mat_3d[ , , 2], "est", clear_half),
     matrix_to_dt(mat_3d[ , , 3], "CI high", clear_half)))
   setorder(overlap_matrix_dt, "rn")
   setnames(overlap_matrix_dt, "rn", "home_range")
@@ -393,13 +396,15 @@ overlap_2d_to_1d <- function(overlap_matrix_dt) {
   # ggplot need the low/ML/high value in columns, now it's not totaly tidy
   overlap_dt <- dcast(overlap_rows_dt_unique, ... ~ estimate,
                       value.var = "overlap")
-  setcolorder(overlap_dt, c("v1", "v2", "CI low", "ML", "CI high"))
+  setcolorder(overlap_dt, c("v1", "v2", "CI low", "est", "CI high"))
   overlap_dt[, Combination := paste(v1, v2, sep = " / ")]
   # COPY end --
   # the right side need to be a list to be assigned to multiple columns. need as.list to convert a vector into separate list items.
-  overlap_dt[, c("CI low", "ML", "CI high") :=
-               as.list(round_CIs(c(`CI low`, ML, `CI high`))),
-             by = 1:nrow(overlap_dt)]
+  round_cols(overlap_dt)
+  return(overlap_dt)
+  # overlap_dt[, c("CI low", "ML", "CI high") :=
+  #              as.list(round_CIs(c(`CI low`, ML, `CI high`))),
+  #            by = 1:nrow(overlap_dt)]
 }
 # home range level input ----
 # parse text input of comma separated values

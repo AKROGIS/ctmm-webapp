@@ -1,12 +1,35 @@
 # ctmm data processing ----
-# make single obj into a list of one item, named by animal id. This make behavior of importing file with single animal and multiple animal consistent. Also needed in other cases.
-wrap_single_telemetry <- function(tele_obj){
-  if (class(tele_obj) != "list") {
-    # use same name so we can return same name if no change made
-    tele_obj <- list(tele_obj)
-    names(tele_obj) <- attr(tele_obj[[1]],"info")$identity
+
+# check tele obj or list, give proper message
+assert_tele_list <- function(tele) {
+  if (class(tele) != "list") {
+    stop(crayon::bgRed$white(
+      "Telemetry list is expected, use `drop = FALSE` in `as.telemetry` or `as_tele_lisst`. see ?as_tele_list for details\n"))
   }
-  return(tele_obj)
+}
+# in most case using `drop = FALSE` is enough, but we still need this in app for wrapping single object sometimes. It's exported so that user can find information in its help
+
+#' Coerce telemetry object to list
+#'
+#' [ctmm::as.telemetry()] will return single telemetry object instead of a list
+#' when there is only one animal in data. To make code consistent we always work
+#' with a list of telemetry objects. Either use `drop = FALSE` in
+#' [ctmm::as.telemetry()] or apply this function over [ctmm::as.telemetry()]
+#' result to ensure a proper list.
+#'
+#' @param tele result from [ctmm::as.telemetry()]
+#'
+#' @return a list of telemetry objects, each named by animal name
+#' @export
+as_tele_list <- function(tele){
+  if (class(tele) != "list") {
+    # use same name so we can return same name if no change made
+    tele_list <- list(tele)
+    names(tele_list) <- attr(tele_list[[1]],"info")$identity
+    return(tele_list)
+  } else {
+    return(tele)
+  }
 }
 # update a list of telemetry obj identity slot with new names, also update item name with new names
 update_tele_list_ids <- function(tele_list, new_name_vec){
@@ -17,9 +40,9 @@ update_tele_list_ids <- function(tele_list, new_name_vec){
   return(tele_list)
 }
 # import multiple files, also work with single file
-import_tele_files <- function(files) {
+import_tele_files <- function(files, remove_marked_outliers = TRUE) {
   tele_list_list <- lapply(files, function(x) {
-    wrap_single_telemetry(as.telemetry(x))
+    as.telemetry(x, mark.rm = remove_marked_outliers, drop = FALSE)
   })
   tele_list <- unlist(tele_list_list, recursive = FALSE)
   animal_names <- names(tele_list)
@@ -88,15 +111,18 @@ info_tele <- function(object) {
 sort_tele_list <- function(tele_list) {
   tele_list[stringr::str_sort(names(tele_list))]
 }
-#' Report data summary on telemetry object/list
+#' Report data summary on telemetry list
 #'
-#' @param tele_obj_list [ctmm::as.telemetry()] telemetry object or list
+#' @param tele_list [ctmm::as.telemetry()] telemetry list. Use `drop = FALSE`
+#'   in [ctmm::as.telemetry()] to ensure a proper list.
 #'
 #' @return A summary `data.table`
 #' @export
 #'
-report <- info_tele_list <- function(tele_obj_list){
-  tele_list <- wrap_single_telemetry(tele_obj_list)
+report <- info_tele_list <- function(tele_list){
+  # previously this work on either obj or list. but this may hide the problem to user. only work on list and give error here is better
+  # stopifnot(class(tele_list) == "list")
+  assert_tele_list(tele_list)
   info_list <- lapply(tele_list, info_tele)
   dt <- rbindlist(info_list)
   name_unit_list <- list("interval" = pick_unit_seconds,
@@ -217,11 +243,23 @@ assign_speed_ctmm <- function(animals_dt, tele_list, device_error) {
   #            by = identity]
   # when using by = identity, each .SD don't have identity column, it's outside.
   # follow usage in ctmm::outlie, error is calculated in distance function
+  # row_name is characters, and we are using data.frame row.names to index them.
   animals_dt[, assigned_speed := ctmm:::assign_speeds(
                           tele_list[[identity]][row_name,],
                           UERE = error)$v.t,
              by = identity]
   return(animals_dt)
+}
+# general fall back function. wait data for speed error then replace with this too. right now just for akde memory error. this only handle one level fall back. for 2 levels fall back, right now just add it manually. currently the 2nd fall back in trymodels actually just print msg, didn't calculate it again so not really fallback again. note arg must be list even for single arg.
+# to be more general, could move msg to first, use ... for all f and args. use do while inside. but don't need that so far.
+fall_back <- function(f1, f1_args_list, f2, f2_args_list, msg) {
+  res <- try(do.call(f1, f1_args_list))
+  if (inherits(res, "try-error")) {
+    # the right hand of $ is style name parameter instead of pkg function, no need to add pkg prefix
+    cat(crayon::white$bgMagenta(msg), "\n")
+    res <- do.call(f2, f2_args_list)
+  }
+  return(res)
 }
 #' Calculate speed for each animal location
 #'
@@ -244,29 +282,22 @@ assign_speed <- function(animals_dt, tele_list, device_error = 10) {
   # note every parameter changes need to be present in every data call, several places
   # my speed calculation need distance columns
   stopifnot(c("error", "distance_center") %in% names(animals_dt))
-  test_calc <- function(data, tele_list, device_error, fun, fun_bak) {
-    res <- tryCatch(fun(data, tele_list, device_error),
-                    error = function(e) "error")
-    if (identical(res, "error")) {
-      res <- fun_bak(data, tele_list, device_error)
-      # the right hand of $ is style name parameter instead of pkg function, no need to add pkg prefix
-      cat(crayon::white$bgRed("Had error with first speed definition, use alternative instead\n"))
-    }
-    return(res)
-  }
   # we didn't use the third fallback, pmin should be robust enough.
-  animals_dt <- test_calc(animals_dt, tele_list, device_error,
-                          assign_speed_ctmm, assign_speed_pmin)
-  # animals_dt <- assign_speed_ctmm(animals_dt)
+  animals_dt <- fall_back(assign_speed_ctmm,
+                          list(animals_dt, tele_list, device_error),
+                          assign_speed_pmin,
+                          list(animals_dt, tele_list, device_error),
+                          "Had error with first speed definition, use alternative instead")
   return(animals_dt)
 }
-# merge tele obj/list into data.table with identity column, easier for ggplot and summary. go through every obj to get data frame and metadata, then combine the data frame into data, metadata into info.
+# we should coerice tele obj to list from very beginning once, and only work with list later. converting it in middle can hide the problem when some code works but some stil have problems.
+# merge tele list into data.table with identity column, easier for ggplot and summary. go through every obj to get data frame and metadata, then combine the data frame into data, metadata into info.
 # assuming row order by timestamp and identity in same order with tele obj.
 # always use row_no for dt identifying records, use (identity, row_name) for tele_list (always need to use identity get item first). need to locate a record in tele_list from a row in dt(many operations only work with ctmm functions on telemetry, so need to convert and calc on that part), so need to maintain row_name same in dt and tele_list. never change them after initialization, also setkey on row_no, also need to make sure no dupe row_name within same individual(otherwise cause problem in dt). maintain row_no, so only add new in new subset added, keep original same.
 # if multiple files are uploaded and holding same individual in different files with duplicated row_name, this could cause problem. there could also be problem with as_telemetry in this case. wait until reported by user.
 # do need to reassign row_no when new subset added.
-tele_list_to_dt <- function(tele_obj_list) {
-  tele_list <- wrap_single_telemetry(tele_obj_list)
+tele_list_to_dt <- function(tele_list) {
+  assert_tele_list(tele_list)
   animal_count <- length(tele_list)
   animal_data_list <- vector(mode = "list", length = animal_count)
   for (i in 1:animal_count) {
@@ -288,7 +319,7 @@ tele_list_to_dt <- function(tele_obj_list) {
   }
   return(animals_data_dt)
 }
-#' Collect location and info `data.table` from telemetry object/list
+#' Collect location and info `data.table` from telemetry list
 #'
 #' A [ctmm::as.telemetry()] telemetry list hold mutiple animal data in separate
 #' list items, each item have the animal location data in a data frame, and
@@ -297,17 +328,17 @@ tele_list_to_dt <- function(tele_obj_list) {
 #' together with `ggplot2` we need to collect all location data as a single
 #' `data.frame` with an animal id column.
 #'
-#' This function convert any input telemetry object/List into a list of 1.
-#' `data.table` of location data, and 2. animal information `data.table`.
-#' `data.table` is chosen over `data.frame` for much better performance. This
-#' data structure is also used in a lot of places in app, which works on any
-#' selected subset of full data in almost all steps.
+#' This function convert any input telemetry List into a list of 1. `data.table`
+#' of location data, and 2. animal information `data.table`. `data.table` is
+#' chosen over `data.frame` for much better performance. This data structure is
+#' also used in a lot of places in app, which works on any selected subset of
+#' full data in almost all steps.
 #'
-#' @param tele_obj_list [ctmm::as.telemetry()] telemetry object/list
+#' @param tele_list [ctmm::as.telemetry()] telemetry list. Use `drop = FALSE` in
+#'   [ctmm::as.telemetry()] to ensure a proper list.
 #'
-#' @return list of
-#' - `data_dt`: all animals collected in one data.table
-#' - `info`: animal information table
+#' @return list of - `data_dt`: all animals collected in one data.table -
+#'   `info`: animal information table
 #' @export
 collect <- combine_tele_list <- function(tele_obj_list) {
   return(list(data_dt = tele_list_to_dt(tele_obj_list),

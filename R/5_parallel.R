@@ -110,13 +110,23 @@ par_lapply <- function(lst, fun,
     error = function(e) {
       cat(crayon::bgRed$white("Parallel Error, try restart R session\n"))
       cat(e)
-            }
+      }
      )
 
   } else {# non-parallel mode
     res <- lapply(lst, fun)
   }
   return(res)
+}
+# test single error object or a list with error objects as items
+has_error <- function(result) {
+  if (inherits(result, "try-error")) {
+    TRUE
+  } else {
+    sapply(result, function(x) {
+      inherits(x, "try-error")
+    })
+  }
 }
 # all par_ functions have additional cores, parallel parameters that will be used in app
 # app need more control since we may want adjusted guess list instead of automatic guess. don't want to add this in package help index, so do not use roxygen format.
@@ -125,59 +135,43 @@ par_lapply <- function(lst, fun,
 # ctmm.select verbose = FALSE: same structure but no model type as name, with one extra layer compare to ctmm.fit. also the object content is different. there is no sense to use verbose = FALSE. though there may be a need for parallel ctmm.fit
 # trace will print progress, but console output is lost in parallel mode since they are not in master r process. it will be shown in non-parallel mode.
 # didn't add animal names to list because the aligned list lost model name information anyway. we added the names in calling code instead. It was only called once.
-# process multiple animals on multiple cores
-par_try_tele_guess_multi <- function(tele_guess_list,
-                                     cores = NULL,
-                                     parallel = TRUE) {
-  # cannot use select_models name since that was a reactive expression to select model results by rows. use internal function for better locality, less name conflict. fit is also not optimal since it hint ctmm.fit
-  # use try to refer the ctmm.select, use select to refer the manual select rows in model summary table.
-  try_models <- function(tele_guess) {
-    res <- try({
-      # log("a")
-      ctmm::ctmm.select(tele_guess[[1]], CTMM = tele_guess[[2]],
-                        control = list(method = "pNewton", cores = 1),
-                        trace = TRUE, verbose = TRUE)
-    })
-    if (inherits(res, "try-error")) {
-      message(res)
-      cat(crayon::white$bgMagenta("ctmm.select() failed with pNewton, switching to Nelder-Mead\n"))
-      res <- ctmm::ctmm.select(tele_guess[[1]], CTMM = tele_guess[[2]],
-                               trace = TRUE, verbose = TRUE)
-    }
-    return(res)
-  }
-  par_lapply(tele_guess_list, try_models, cores, parallel)
-}
-# process single animal in multiple cores
-par_try_tele_guess_single <- function(tele_guess_list,
-                                     cores = NULL,
-                                     parallel = TRUE) {
-  cat(crayon::white$bgBlack("trying models on single animal with multiple cores\n"))
-  tele_guess <- tele_guess_list[[1]]
-  cores <- if (parallel) -1 else 1
-  res <- try({
-    # log("a")
-    ctmm::ctmm.select(tele_guess[[1]], CTMM = tele_guess[[2]],
-                      control = list(method = "pNewton", cores = cores),
-                      trace = TRUE, verbose = TRUE)
-  })
-  if (inherits(res, "try-error")) {
-    message(res)
-    cat(crayon::white$bgMagenta("ctmm.select() failed with pNewton, switching to Nelder-Mead\n"))
-    res <- ctmm::ctmm.select(tele_guess[[1]], CTMM = tele_guess[[2]],
-                             control = list(cores = cores),
-                             trace = TRUE, verbose = TRUE)
-  }
-  return(list(res))
-}
+# try: the ctmm.select, select: the manual select rows in model summary table. cannot use select_models name since that was a reactive expression to select model results by rows. use internal function for better locality, less name conflict. fit is also not optimal since it hint ctmm.fit
 par_try_tele_guess <- function(tele_guess_list,
-                               cores = NULL,
-                               parallel = TRUE) {
-  if (length(tele_guess_list) == 1) {
-    par_try_tele_guess_single(tele_guess_list, cores, parallel)
-  } else {
-    par_try_tele_guess_multi(tele_guess_list, cores, parallel)
+                                     cores = NULL,
+                                     parallel = TRUE) {
+  # tele_guess_list is list by animals. each item have two sub items of tele, CTMM.
+  try_models <- function(tele_guess) {
+    # only difference is pNewton method. internal_cores is outside value(not defined right now, but has value when try_models was called), referenced invisibly because the par_lapply need single parameter function
+    fall_back(ctmm::ctmm.select,
+              list(tele_guess[[1]], CTMM = tele_guess[[2]],
+                   control = list(method = "pNewton",
+                                  cores = internal_cores),
+                   trace = TRUE, verbose = TRUE),
+              ctmm::ctmm.select,
+              list(tele_guess[[1]], CTMM = tele_guess[[2]],
+                   control = list(cores = internal_cores),
+                   trace = TRUE, verbose = TRUE),
+              "ctmm.select() failed with pNewton, switching to Nelder-Mead")
   }
+  # process multiple animals on multiple cores, single animal on multiple cores using ctmm.select internal parallel option.
+  if (length(tele_guess_list) == 1) {
+    tele_guess <- tele_guess_list[[1]]
+    internal_cores <- if (parallel) -1 else 1
+    cores_reported <- if (parallel) "all but one" else 1
+    cat(crayon::white$bgBlack("trying models on single animal with",
+                              cores_reported, "cores\n"))
+    # the result is a list of models, named by model type. need to wrap into a list of animals. this internal function doesn't provide animal name as it may not have information. par_try_models as external functions will assign names, the app calling code also assign names.
+    res <- list(try(try_models(tele_guess_list[[1]])))
+  } else {
+    internal_cores <- 1
+    res <- try(par_lapply(tele_guess_list, try_models, cores, parallel))
+  }
+  # in serial mode whole res become error with one individual error. in parallel mode only list items with error are errors.
+  if (any(has_error(res))) {
+    cat(crayon::bgYellow$red("Error in model selection\n"))
+  }
+  # return value could be error object or list with error object as items. This is fine in command line(and keep most information), but need to prevent next in app as model as error object cannot work.
+  return(res)
 }
 # convenience wrapped to take telemetry list, guess them, fit models. In app we need modified guess list so didn't use this.
 
@@ -192,8 +186,7 @@ par_try_tele_guess <- function(tele_guess_list,
 #'   the attempted models as sub items with model type as name.
 #' @export
 par_try_models <- function(tele_list,
-                           cores = NULL,
-                              parallel = TRUE) {
+                           cores = NULL, parallel = TRUE) {
   tele_guess_list <- align_lists(tele_list,
                                 lapply(tele_list, function(x) {
                                   ctmm::ctmm.guess(x, interactive = FALSE)
@@ -202,7 +195,9 @@ par_try_models <- function(tele_list,
                       par_try_tele_guess(tele_guess_list,
                                          cores,
                                          parallel)))
-  names(model_try_res) <- names(tele_list)
+  if (!inherits(model_try_res, "try-error")) {
+    names(model_try_res) <- names(tele_list)
+  }
   return(model_try_res)
 }
 
