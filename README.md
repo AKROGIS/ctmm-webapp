@@ -13,7 +13,7 @@ This is a web app for analyzing animal tracking data, built upon [ctmm R package
     $ git checkout upstream/master
     ```
 
-3. Start R console, run these lines.
+  Start R console, run these lines.
 
     ```r
     install.packages("ctmmweb", 
@@ -22,13 +22,14 @@ This is a web app for analyzing animal tracking data, built upon [ctmm R package
     quit
     ```
 
+3. Run the app
     ```bash
     $ git checkout master
-    $ R
     ```
+   Review/edit `run.R` and ensure the path is correct, and there is a `data` folder in the cwd.  Then
 
-    ```r
-    source('regan.R')
+    ```bash
+    $ R --vanilla < run.R &
     ```
 
    Or run the local developer version for testing/demonstrations, without internet downloads, etc.

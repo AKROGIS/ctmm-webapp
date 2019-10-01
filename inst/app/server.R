@@ -31,7 +31,7 @@ server <- function(input, output, session) {
     )
   })
   # one time check if app is running in hosted mode. this is needed in LOG feature and self update check
-  APP_local <- (isolate(session$clientData$url_hostname) == "127.0.0.1")
+  APP_local <- FALSE 
   # pkg update check ----
   # this will not work in hosted server because pkg installation folder have permission limit. we don't need to check in hosted server too so just disable for server.
   # to test need to change several places: days passed condition 30 -> 0, check_update since_date to older date, pkg_date and commit date compare condition. test with internet off server times, first should time out, later should not check.
