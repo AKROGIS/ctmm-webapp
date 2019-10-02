@@ -91,6 +91,7 @@ upload_box <- box(title = "Local Data Import",
                                     "Lake Clark Sheep" = 'lacl_sheep',
                                     "Western Arctic Caribou Herd" = 'wach_caribou',
                                     "Wrangell-St Elias Caribou" = 'wrst_caribou',
+                                    "Yukon Charley Wolves" = 'yuch_wolf',
                                     "Upload File" = 'upload'),
                                   selected = "upload")),
           column(6, fileInput('tele_file', label =

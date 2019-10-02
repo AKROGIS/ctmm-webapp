@@ -617,6 +617,10 @@ output:
              data("WRST_Caribou")
              update_input_data(WRST_Caribou)
            },
+           yuch_wolf = {
+             data("YUCH_Wolf")
+             update_input_data(YUCH_Wolf)
+           },
            upload = {
              # the radiobutton itself doesn't upload, just reuse previously uploaded file if switched back.
              # need to check NULL input from source, stop error in downstream
