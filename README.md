@@ -1,3 +1,45 @@
+# Continuous Time Movement Model
+
+This is a fork of R code and a [Shiny](https://shiny.rstudio.com/) web app for doing
+CTMM analysis of animal movement data from GPS collars.  It has been modified to
+integrate with the NPS [Animal Movement](https://github.com/AKROGIS/AnimalMovement)
+database.
+
+It currently presents the animal movement data to the shiny app via CSV extracts
+that are converted to R dataframes (\*.rda). Directly querying the database was too
+slow, so in lieu of a caching solution, I had planned to create a scheduled task to
+refresh the CSV data on a regular basis.
+
+The CSV files have the following format
+```
+id,timestamp,longitude,latitude
+LC0802,2008-12-06 00:01:00,-153.7778,60.9401
+```
+
+created with SQL similar to the following:
+```SQL
+Select AnimalId as id, fixdate as timestamp, Location.Long as longitude, Location.Lat as latitude
+from Locations where projectid = 'PROJECT' order by fixdate
+```
+One CSV file was created for each project and id was the animal id.  The data
+should be ordered by timestamp. The CSV files were converted to `rda` files with
+the `CreateAnimalMovements.R` script.  The deployed rda files were put in the data folder
+of the R/Shiny app 
+
+See the original readme file (below) for details on building and deploying the
+R/Shiny app.
+
+The web app (actually just an http end point served by the R/Shiny code)
+was deployed on one of our servers, however it wasn't very stable. It seems like
+the code was designed to be run in a local mode (single user), and doesn't handle
+multiple concurrent sessions with different users.
+
+While there are significant advantages of CTMM over other home range anaylsis methods,
+this project has not progressed past the prototype stage.  Resolving the server stability
+and data refresh issues was put on hold, awaiting further direction from the NPS biologists.
+
+The following is the original Readme
+
 ## Introduction
 
 This is a web app for analyzing animal tracking data, built upon [ctmm R package](https://github.com/ctmm-initiative/ctmm). It's also an R package so you can use some features in your code directly.
