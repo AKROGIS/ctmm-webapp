@@ -23,7 +23,7 @@ Select AnimalId as id, fixdate as timestamp, Location.Long as longitude, Locatio
 from Locations where projectid = 'PROJECT' order by fixdate
 ```
 A CSV file was created for each project. The CSV files were converted to `rda` files
-with the `CreateAnimalMovements.R` script.  The `rda` files need to be put in a `data`
+with the `make_data.R` script.  The `rda` files need to be put in a `data`
 folder in the current working directory when the `Run.R` file is executed. Each
 file also needs to be shown to the user by adding a reference to each file in 
 [inst/app/server.R](https://github.com/regan-sarwas/ctmm-webapp/blob/c4716f63c0ebc8942dcdb8d34b5bd6e487fa1b20/inst/app/server.R#L572-L574).
