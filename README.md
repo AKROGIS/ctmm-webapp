@@ -40,6 +40,8 @@ direction from the NPS biologists.
 
 ## Install/Deploy/Run
 
+**To deploy the web app on a local server, see Server_Install.md**
+
 This will run the app from the repo dir.  These instructions have changed several
 times as the upstream code has evolved, so you may need to adapt if you encounter
 errors. The instructions also assume a *nix environment.  They will also work in
