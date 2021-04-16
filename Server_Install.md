@@ -1,8 +1,9 @@
 # Hosting CTMM web app on a local server
 
 The Continuous Time Movement Model (CTMM) web app is hosted on INPAKROVMAIS.
+The template for the deployment folder is `nps_server_deployment`
 Instructions for installing/Configuring this app are as follows (only needed in a server rebuild).
-Instructions for updating are at the end .
+Instructions for updating are at the end.
 
 ## Install
 
